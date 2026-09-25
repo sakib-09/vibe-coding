@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Log Analyzer — Web Access Log Dashboard</title>
+<style>
+  /* ---- Layout ---- */
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", system-ui, Arial, sans-serif;
+    background: #0f172a; color: #e2e8f0;
+    margin: 0; padding: 0 0 60px;
+  }
+  header { background: #1e293b; padding: 24px; border-bottom: 3px solid #38bdf8; }
+  header h1 { margin: 0 0 6px; font-size: 26px; }
+  header p  { margin: 0; color: #94a3b8; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px; }
+
+  /* ---- Input panel ---- */
+  .panel { background: #1e293b; border-radius: 10px; padding: 18px; margin-bottom: 20px; }
+  .panel h2 { margin-top: 0; font-size: 18px; color: #38bdf8; }
+  textarea {
+    width: 100%; height: 150px; resize: vertical;
+    background: #0b1220; color: #cbd5e1; border: 1px solid #334155;
+    border-radius: 6px; padding: 10px; font-family: Consolas, monospace; font-size: 12px;
+  }
+  .btn-row { margin-top: 12px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  button, .file-label {
+    background: #38bdf8; color: #0f172a; border: none; border-radius: 6px;
+    padding: 10px 18px; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  button:hover, .file-label:hover { background: #7dd3fc; }
+  button.ghost { background: #334155; color: #e2e8f0; }
+  button.ghost:hover { background: #475569; }
+  input[type="file"] { display: none; }
+  .hint { color: #94a3b8; font-size: 13px; margin: 8px 0 0; }
+
+  /* ---- Summary cards ---- */
+  #results { display: none; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 20px; }
+  .card { background: #1e293b; border-radius: 10px; padding: 16px; text-align: center; }
+  .card .value { font-size: 30px; font-weight: 700; color: #38bdf8; }
+  .card .label { color: #94a3b8; font-size: 13px; margin-top: 4px; }
+  .card.danger .value { color: #f87171; }
+  .card.warn   .value { color: #fbbf24; }
+
+  /* ---- Tables & chart ---- */
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 800px) { .grid2 { grid-template-columns: 1fr; } }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #334155; }
+  th { color: #94a3b8; font-weight: 600; text-transform: uppercase; font-size: 11px; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  code { background: #0b1220; padding: 2px 6px; border-radius: 4px; font-size: 12px; word-break: break-all; }
+  .status-2 { color: #4ade80; font-weight: 700; }
+  .status-3 { color: #38bdf8; font-weight: 700; }
+  .status-4 { color: #fbbf24; font-weight: 700; }
+  .status-5 { color: #f87171; font-weight: 700; }
+  canvas { width: 100%; height: 220px; background: #0b1220; border-radius: 6px; }
+  #search {
+    width: 100%; padding: 10px; margin: 10px 0;
+    background: #0b1220; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🔍 Log Analyzer</h1>
+  <p>Paste or upload an Apache / Nginx access log and get an instant support dashboard:
+     status-code breakdown, top pages, top visitors, slowest requests, and every error.</p>
+</header>
+
+<main>
+  <!-- ============ INPUT ============ -->
+  <section class="panel">
+    <h2>1. Load a log</h2>
+    <textarea id="logInput" placeholder="Paste access log lines here, e.g.&#10;192.168.1.10 - frank [25/Sep/2026:09:02:11 +0600] &quot;GET /index.html HTTP/1.1&quot; 200 5123 &quot;-&quot; &quot;Mozilla/5.0&quot;"></textarea>
+    <div class="btn-row">
+      <button id="analyzeBtn">Analyze pasted log</button>
+      <label class="file-label" for="fileInput">Upload .log file</label>
+      <input type="file" id="fileInput" accept=".log,.txt">
+      <button class="ghost" id="sampleBtn">Load sample log</button>
+      <button class="ghost" id="clearBtn">Clear</button>
+    </div>
+    <p class="hint">Format: Apache/Nginx <em>combined</em> log format. An optional response time in
+       seconds at the end of each line (e.g. <code>0.042</code>) enables the "slowest requests" table.</p>
+  </section>
+
+  <!-- ============ RESULTS ============ -->
+  <div id="results">
+    <div class="cards">
+      <div class="card"><div class="value" id="cTotal">0</div><div class="label">Total requests</div></div>
+      <div class="card"><div class="value" id="cIps">0</div><div class="label">Unique visitors (IPs)</div></div>
+      <div class="card danger"><div class="value" id="cErrors">0</div><div class="label">Errors (4xx + 5xx)</div></div>
+      <div class="card warn"><div class="value" id="cSlow">–</div><div class="label">Slowest request</div></div>
+    </div>
+
+    <div class="grid2">
+      <section class="panel">
+        <h2>Status codes</h2>
+        <canvas id="statusChart" width="500" height="220"></canvas>
+        <table id="statusTable"></table>
+      </section>
+      <section class="panel">
+        <h2>Top requested URLs</h2>
+        <table id="urlTable"></table>
+      </section>
+    </div>
+
+    <div class="grid2">
+      <section class="panel">
+        <h2>Top visitor IPs</h2>
+        <table id="ipTable"></table>
+      </section>
+      <section class="panel">
+        <h2>Slowest requests</h2>
+        <table id="slowTable"></table>
+      </section>
+    </div>
+
+    <section class="panel">
+      <h2>Errors (4xx &amp; 5xx)</h2>
+      <input type="text" id="search" placeholder="Filter errors — type an IP, URL, or status code…">
+      <div class="btn-row"><button class="ghost" id="csvBtn">⬇ Export errors as CSV</button></div>
+      <table id="errorTable"></table>
+    </section>
+  </div>
+</main>
+
+<script>
+"use strict";
+
+/* =====================================================================
+   PURE LOGIC — no DOM access here, so it can be unit-tested in Node.
+   ===================================================================== */
+
+// One line of an Apache/Nginx "combined" access log looks like:
+// 192.168.1.10 - frank [25/Sep/2026:09:02:11 +0600] "GET /index.html HTTP/1.1" 200 5123 "-" "Mozilla/5.0"
+// We also accept an optional response time in seconds appended at the end.
+const LOG_RE = /^(\S+) \S+ (\S+) \[([^\]]+)\] "([^"]*)" (\d{3}) (\d+|-) "([^"]*)" "([^"]*)"(?:\s+([\d.]+))?\s*$/;
+
+/**
+ * Parse raw log text into an array of entry objects.
+ * Lines that don't match are counted as skipped, not fatal.
+ * @param {string} text
+ * @returns {{entries: Array, skipped: number}}
+ */
+function parseLog(text) {
+  const entries = [];
+  let skipped = 0;
+
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (!line) continue;                       // ignore blank lines
+    const m = line.match(LOG_RE);
+    if (!m) { skipped++; continue; }
+
+    // The request part is: METHOD PATH PROTOCOL — split carefully
+    // because the path itself may contain spaces.
+    const reqParts = m[4].split(" ");
+    const method = reqParts[0] || "-";
+    let path = "-", protocol = "-";
+    if (reqParts.length >= 3 && reqParts[reqParts.length - 1].startsWith("HTTP/")) {
+      protocol = reqParts[reqParts.length - 1];
+      path = reqParts.slice(1, -1).join(" ") || "-";
+    } else if (reqParts.length >= 2) {
+      path = reqParts.slice(1).join(" ") || "-";
+    }
+
+    entries.push({
+      ip: m[1],
+      user: m[2] === "-" ? "(anonymous)" : m[2],
+      time: m[3],
+      method,
+      path,
+      protocol,
+      status: parseInt(m[5], 10),
+      bytes: m[6] === "-" ? 0 : parseInt(m[6], 10),
+      referer: m[7],
+      agent: m[8],
+      // Optional trailing field = response time in seconds (Nginx $request_time style)
+      duration: m[9] !== undefined ? parseFloat(m[9]) : null,
+    });
+  }
+  return { entries, skipped };
+}
+
+/** Count occurrences of a key extracted by fn, return sorted [key, count] pairs. */
+function topCounts(entries, fn, limit) {
+  const map = new Map();
+  for (const e of entries) {
+    const k = fn(e);
+    map.set(k, (map.get(k) || 0) + 1);
+  }
+  return [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, limit);
+}
+
+/**
+ * Compute every statistic the dashboard needs from parsed entries.
+ * @param {Array} entries
+ */
+function analyze(entries) {
+  const total = entries.length;
+  const errors = entries.filter(e => e.status >= 400);
+  const withTime = entries.filter(e => e.duration !== null);
+
+  const statusCounts = {};
+  for (const e of entries) {
+    const cls = Math.floor(e.status / 100) + "xx";
+    statusCounts[cls] = (statusCounts[cls] || 0) + 1;
+  }
+
+  const slowest = [...withTime].sort((a, b) => b.duration - a.duration).slice(0, 10);
+
+  return {
+    total,
+    uniqueIps: new Set(entries.map(e => e.ip)).size,
+    errorCount: errors.length,
+    errorRate: total ? (errors.length / total) * 100 : 0,
+    statusCounts,
+    topUrls: topCounts(entries, e => e.method + " " + e.path, 10),
+    topIps: topCounts(entries, e => e.ip, 10),
+    slowest,
+    errors,
+    hasTiming: withTime.length > 0,
+    slowestOverall: slowest.length ? slowest[0].duration : null,
+  };
+}
+
+/** Escape text for safe HTML insertion (prevents log content breaking the page). */
+function esc(s) {
+  return String(s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+/**
+ * Build a CSV string of the error entries (for the Export button).
+ * @param {Array} errors
+ */
+function errorsToCsv(errors) {
+  const rows = [["ip", "time", "method", "path", "status", "bytes", "user_agent"]];
+  for (const e of errors) {
+    rows.push([e.ip, e.time, e.method, e.path, e.status, e.bytes, e.agent]);
+  }
+  // Quote every field so commas/quotes inside values can't corrupt the CSV.
+  return rows.map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(",")).join("\r\n");
+}
+
+/* =====================================================================
+   RENDERING — DOM code below this line (browser only).
+   ===================================================================== */
+
+function statusClass(status) {
+  return "status-" + Math.floor(status / 100);
+}
+
+function renderStats(s) {
+  setText("cTotal", s.total);
+  setText("cIps", s.uniqueIps);
+  setText("cErrors", s.errorCount + " (" + s.errorRate.toFixed(1) + "%)");
+  setText("cSlow", s.slowestOverall !== null ? s.slowestOverall.toFixed(3) + "s" : "n/a");
+
+  // Status code summary table
+  const order = ["2xx", "3xx", "4xx", "5xx"];
+  const labels = { "2xx": "Success", "3xx": "Redirect", "4xx": "Client error", "5xx": "Server error" };
+  let html = "<tr><th>Class</th><th>Meaning</th><th style='text-align:right'>Count</th></tr>";
+  for (const cls of order) {
+    const n = s.statusCounts[cls] || 0;
+    html += "<tr><td><span class='" + statusClass(parseInt(cls)) + "'>" + cls + "</span></td>" +
+            "<td>" + labels[cls] + "</td><td class='num'>" + n + "</td></tr>";
+  }
+  setHtml("statusTable", html);
+  drawBarChart(s.statusCounts, order);
+
+  setHtml("urlTable",
+    "<tr><th>Request</th><th style='text-align:right'>Hits</th></tr>" +
+    s.topUrls.map(([u, n]) => "<tr><td><code>" + esc(u) + "</code></td><td class='num'>" + n + "</td></tr>").join(""));
+
+  setHtml("ipTable",
+    "<tr><th>IP address</th><th style='text-align:right'>Requests</th></tr>" +
+    s.topIps.map(([ip, n]) => "<tr><td><code>" + esc(ip) + "</code></td><td class='num'>" + n + "</td></tr>").join(""));
+
+  setHtml("slowTable", s.hasTiming
+    ? "<tr><th>Time</th><th>Request</th><th style='text-align:right'>Status</th></tr>" +
+      s.slowest.map(e => "<tr><td class='num'>" + e.duration.toFixed(3) + "s</td>" +
+        "<td><code>" + esc(e.method + " " + e.path) + "</code></td>" +
+        "<td class='num'><span class='" + statusClass(e.status) + "'>" + e.status + "</span></td></tr>").join("")
+    : "<tr><td>No response-time data in this log.</td></tr>");
+
+  renderErrors(s.errors, "");
+}
+
+function renderErrors(errors, filter) {
+  const q = filter.trim().toLowerCase();
+  const rows = errors.filter(e =>
+    !q || e.ip.includes(q) || e.path.toLowerCase().includes(q) || String(e.status).includes(q));
+  setHtml("errorTable",
+    "<tr><th>Time</th><th>IP</th><th>Request</th><th style='text-align:right'>Status</th></tr>" +
+    (rows.length
+      ? rows.map(e => "<tr><td><code>" + esc(e.time) + "</code></td><td><code>" + esc(e.ip) + "</code></td>" +
+        "<td><code>" + esc(e.method + " " + e.path) + "</code></td>" +
+        "<td class='num'><span class='" + statusClass(e.status) + "'>" + e.status + "</span></td></tr>").join("")
+      : "<tr><td colspan='4'>No errors match.</td></tr>"));
+  // Stash the full error list on the element for the CSV export button.
+  document.getElementById("errorTable")._errors = errors;
+}
+
+/** Draw a simple bar chart on the status canvas — no libraries needed. */
+function drawBarChart(counts, order) {
+  const canvas = document.getElementById("statusChart");
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const colors = { "2xx": "#4ade80", "3xx": "#38bdf8", "4xx": "#fbbf24", "5xx": "#f87171" };
+  const max = Math.max(1, ...order.map(c => counts[c] || 0));
+  const barW = Math.min(80, (W / order.length) * 0.5);
+
+  order.forEach((cls, i) => {
+    const n = counts[cls] || 0;
+    const h = (H - 50) * (n / max);                    // scale bar to tallest
+    const x = (i + 0.5) * (W / order.length) - barW / 2;
+    const y = H - 30 - h;
+    ctx.fillStyle = colors[cls];
+    ctx.fillRect(x, y, barW, h);
+    ctx.fillStyle = "#e2e8f0";
+    ctx.font = "13px sans-serif"; ctx.textAlign = "center";
+    ctx.fillText(cls, x + barW / 2, H - 12);
+    ctx.fillText(n, x + barW / 2, y - 6);
+  });
+}
+
+// Small DOM helpers
+function setText(id, v) { document.getElementById(id).textContent = v; }
+function setHtml(id, html) { document.getElementById(id).innerHTML = html; }
+
+/** Run the full pipeline: parse -> analyze -> render. */
+function runAnalysis(text) {
+  const { entries, skipped } = parseLog(text);
+  if (!entries.length) {
+    alert("No valid log lines found." + (skipped ? " (" + skipped + " lines skipped.)" : "") +
+          "\nExpected Apache/Nginx combined log format.");
+    return;
+  }
+  if (skipped) console.warn(skipped + " line(s) did not match the log format and were skipped.");
+  const stats = analyze(entries);
+  renderStats(stats);
+  document.getElementById("results").style.display = "block";
+  document.getElementById("results").scrollIntoView({ behavior: "smooth" });
+}
+
+/* =====================================================================
+   EVENT WIRING — runs once the page loads (browser only).
+   ===================================================================== */
+function init() {
+  const input = document.getElementById("logInput");
+
+  document.getElementById("analyzeBtn").addEventListener("click", () => runAnalysis(input.value));
+
+  document.getElementById("fileInput").addEventListener("change", ev => {
+    const file = ev.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => { input.value = reader.result; runAnalysis(reader.result); };
+    reader.readAsText(file);
+  });
+
+  document.getElementById("sampleBtn").addEventListener("click", () => {
+    input.value = SAMPLE_LOG;
+    runAnalysis(SAMPLE_LOG);
+  });
+
+  document.getElementById("clearBtn").addEventListener("click", () => {
+    input.value = "";
+    document.getElementById("results").style.display = "none";
+  });
+
+  document.getElementById("search").addEventListener("input", ev => {
+    const errors = document.getElementById("errorTable")._errors || [];
+    renderErrors(errors, ev.target.value);
+  });
+
+  document.getElementById("csvBtn").addEventListener("click", () => {
+    const errors = document.getElementById("errorTable")._errors || [];
+    if (!errors.length) { alert("No errors to export."); return; }
+    const blob = new Blob([errorsToCsv(errors)], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "log-errors.csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+}
+
+// Embedded copy of sample.log so the "Load sample log" button works offline.
+const SAMPLE_LOG = /*__SAMPLE_LOG__*/ "192.168.1.10 - frank [25/Sep/2026:09:02:11 +0600] \"GET /index.html HTTP/1.1\" 200 5123 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\" 0.042\n192.168.1.10 - frank [25/Sep/2026:09:02:14 +0600] \"GET /styles/main.css HTTP/1.1\" 200 1832 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\" 0.011\n192.168.1.11 - - [25/Sep/2026:09:02:19 +0600] \"GET /products.html HTTP/1.1\" 200 9210 \"-\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)\" 0.067\n192.168.1.12 - jane [25/Sep/2026:09:03:02 +0600] \"POST /api/login HTTP/1.1\" 200 214 \"https://example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\" 0.231\n192.168.1.13 - - [25/Sep/2026:09:03:40 +0600] \"GET /old-page.html HTTP/1.1\" 404 512 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\" 0.008\n192.168.1.10 - frank [25/Sep/2026:09:04:05 +0600] \"GET /images/logo.png HTTP/1.1\" 200 45211 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\" 0.019\n192.168.1.14 - - [25/Sep/2026:09:04:33 +0600] \"GET /admin HTTP/1.1\" 403 299 \"-\" \"curl/7.81.0\" 0.005\n192.168.1.12 - jane [25/Sep/2026:09:05:12 +0600] \"GET /api/orders HTTP/1.1\" 200 18344 \"https://example.com/dashboard\" \"Mozilla/5.0 (X11; Linux x86_64)\" 1.842\n192.168.1.15 - - [25/Sep/2026:09:05:47 +0600] \"GET /favicon.ico HTTP/1.1\" 404 209 \"-\" \"Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)\" 0.006\n192.168.1.11 - - [25/Sep/2026:09:06:21 +0600] \"GET /products.html HTTP/1.1\" 304 0 \"-\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)\" 0.009\n192.168.1.16 - - [25/Sep/2026:09:07:03 +0600] \"GET /.env HTTP/1.1\" 404 512 \"-\" \"Mozilla/5.0 (compatible; scanner/1.0)\" 0.004\n192.168.1.12 - jane [25/Sep/2026:09:07:55 +0600] \"POST /api/checkout HTTP/1.1\" 500 612 \"https://example.com/cart\" \"Mozilla/5.0 (X11; Linux x86_64)\" 3.214\n192.168.1.17 - bob [25/Sep/2026:09:08:12 +0600] \"GET /support.html HTTP/1.1\" 200 7742 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\" 0.055\n192.168.1.13 - - [25/Sep/2026:09:08:44 +0600] \"GET /old-page.html HTTP/1.1\" 404 512 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\" 0.007\n192.168.1.10 - frank [25/Sep/2026:09:09:01 +0600] \"GET /index.html HTTP/1.1\" 200 5123 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\" 0.038\n192.168.1.18 - - [25/Sep/2026:09:09:37 +0600] \"GET /wp-login.php HTTP/1.1\" 404 512 \"-\" \"Mozilla/5.0 (compatible; scanner/1.0)\" 0.005\n192.168.1.12 - jane [25/Sep/2026:09:10:20 +0600] \"POST /api/checkout HTTP/1.1\" 500 612 \"https://example.com/cart\" \"Mozilla/5.0 (X11; Linux x86_64)\" 2.977\n192.168.1.19 - alice [25/Sep/2026:09:11:02 +0600] \"GET /api/products?page=2 HTTP/1.1\" 200 22108 \"-\" \"PostmanRuntime/7.32.3\" 0.412\n192.168.1.11 - - [25/Sep/2026:09:11:45 +0600] \"GET /about.html HTTP/1.1\" 200 3411 \"-\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)\" 0.048\n192.168.1.20 - - [25/Sep/2026:09:12:19 +0600] \"GET /api/users/9999 HTTP/1.1\" 404 188 \"-\" \"python-requests/2.31.0\" 0.093\n192.168.1.12 - jane [25/Sep/2026:09:13:08 +0600] \"GET /api/orders HTTP/1.1\" 200 18344 \"https://example.com/dashboard\" \"Mozilla/5.0 (X11; Linux x86_64)\" 1.655\n192.168.1.21 - - [25/Sep/2026:09:14:52 +0600] \"GET /index.html HTTP/1.1\" 200 5123 \"-\" \"Mozilla/5.0 (Android 14; Mobile)\" 0.051\n192.168.1.10 - frank [25/Sep/2026:09:15:30 +0600] \"GET /contact.html HTTP/1.1\" 200 2988 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\" 0.044\n192.168.1.22 - - [25/Sep/2026:09:16:11 +0600] \"POST /api/login HTTP/1.1\" 401 142 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\" 0.118\n192.168.1.22 - - [25/Sep/2026:09:16:14 +0600] \"POST /api/login HTTP/1.1\" 401 142 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\" 0.121\n192.168.1.22 - - [25/Sep/2026:09:16:17 +0600] \"POST /api/login HTTP/1.1\" 401 142 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\" 0.115\n192.168.1.22 - - [25/Sep/2026:09:16:20 +0600] \"POST /api/login HTTP/1.1\" 401 142 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\" 0.119\n192.168.1.12 - jane [25/Sep/2026:09:17:02 +0600] \"POST /api/checkout HTTP/1.1\" 502 0 \"https://example.com/cart\" \"Mozilla/5.0 (X11; Linux x86_64)\" 5.031\n192.168.1.23 - - [25/Sep/2026:09:18:36 +0600] \"GET /scripts/app.js HTTP/1.1\" 200 66420 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\" 0.073\n192.168.1.24 - mike [25/Sep/2026:09:19:05 +0600] \"DELETE /api/cart/item/42 HTTP/1.1\" 204 0 \"https://example.com/cart\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)\" 0.088\n192.168.1.10 - frank [25/Sep/2026:09:20:41 +0600] \"GET /index.html HTTP/1.1\" 200 5123 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\" 0.036\n192.168.1.25 - - [25/Sep/2026:09:21:19 +0600] \"GET /api/health HTTP/1.1\" 200 15 \"-\" \"kube-probe/1.28\" 0.002\n192.168.1.25 - - [25/Sep/2026:09:22:19 +0600] \"GET /api/health HTTP/1.1\" 200 15 \"-\" \"kube-probe/1.28\" 0.002\n192.168.1.26 - - [25/Sep/2026:09:23:44 +0600] \"GET /promo/summer-sale HTTP/1.1\" 301 0 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\" 0.010\n192.168.1.26 - - [25/Sep/2026:09:23:46 +0600] \"GET /promo/summer-sale/ HTTP/1.1\" 200 6102 \"https://example.com/promo/summer-sale\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\" 0.062\n192.168.1.13 - - [25/Sep/2026:09:24:10 +0600] \"GET /old-page.html HTTP/1.1\" 404 512 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\" 0.006\n192.168.1.27 - sara [25/Sep/2026:09:25:33 +0600] \"GET /api/invoices/2026-09.pdf HTTP/1.1\" 200 104857 \"-\" \"Mozilla/5.0 (X11; Linux x86_64)\" 0.934\n192.168.1.28 - - [25/Sep/2026:09:26:57 +0600] \"GET /robots.txt HTTP/1.1\" 200 118 \"-\" \"Mozilla/5.0 (compatible; Googlebot/2.1)\" 0.003\n192.168.1.12 - jane [25/Sep/2026:09:27:40 +0600] \"POST /api/checkout HTTP/1.1\" 200 388 \"https://example.com/cart\" \"Mozilla/5.0 (X11; Linux x86_64)\" 0.542\n192.168.1.29 - - [25/Sep/2026:09:28:15 +0600] \"GET /nonexistent.css HTTP/1.1\" 404 512 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\" 0.007\n192.168.1.30 - - [25/Sep/2026:09:29:02 +0600] \"GET /api/orders HTTP/1.1\" 200 18344 \"-\" \"python-requests/2.31.0\" 1.733\n192.168.1.16 - - [25/Sep/2026:09:30:48 +0600] \"GET /phpmyadmin/ HTTP/1.1\" 404 512 \"-\" \"Mozilla/5.0 (compatible; scanner/1.0)\" 0.004\n192.168.1.31 - tom [25/Sep/2026:09:31:26 +0600] \"PUT /api/profile HTTP/1.1\" 200 96 \"https://example.com/settings\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)\" 0.187\n192.168.1.22 - - [25/Sep/2026:09:32:09 +0600] \"POST /api/login HTTP/1.1\" 200 214 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\" 0.203\n192.168.1.32 - - [25/Sep/2026:09:33:51 +0600] \"GET /api/search?q=laptop HTTP/1.1\" 200 15230 \"-\" \"Mozilla/5.0 (Android 14; Mobile)\" 0.689\n192.168.1.33 - - [25/Sep/2026:09:35:14 +0600] \"GET /api/reports/monthly HTTP/1.1\" 503 0 \"-\" \"python-requests/2.31.0\" 8.412\n192.168.1.10 - frank [25/Sep/2026:09:36:47 +0600] \"GET /styles/print.css HTTP/1.1\" 200 1204 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\" 0.012\n192.168.1.34 - - [25/Sep/2026:09:38:20 +0600] \"GET /api/docs HTTP/1.1\" 200 44120 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\" 0.156\n192.168.1.35 - - [25/Sep/2026:09:40:03 +0600] \"HEAD /api/health HTTP/1.1\" 200 0 \"-\" \"kube-probe/1.28\" 0.001\n192.168.1.12 - jane [25/Sep/2026:09:41:37 +0600] \"POST /api/orders/refund HTTP/1.1\" 500 612 \"https://example.com/dashboard\" \"Mozilla/5.0 (X11; Linux x86_64)\" 2.445\n192.168.1.36 - - [25/Sep/2026:09:43:12 +0600] \"GET /sitemap.xml HTTP/1.1\" 200 8834 \"-\" \"Mozilla/5.0 (compatible; bingbot/2.0)\" 0.021";
+
+if (typeof window !== "undefined" && typeof document !== "undefined" &&
+    typeof document.getElementById === "function") {
+  window.addEventListener("DOMContentLoaded", init);
+}
+</script>
+</body>
+</html>
