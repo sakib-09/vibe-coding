@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mini Helpdesk — IT Support Ticket Tracker</title>
+<style>
+  /* ---------------------------------------------------------------
+     Simple design system: CSS custom properties keep colors in one
+     place. Change a value here and the whole app updates.
+     --------------------------------------------------------------- */
+  :root {
+    --bg: #0f172a;            /* dark slate page background */
+    --panel: #1e293b;         /* slightly lighter panels */
+    --panel-2: #273549;       /* hover / inset elements */
+    --text: #e2e8f0;          /* main text */
+    --muted: #94a3b8;         /* secondary text */
+    --accent: #38bdf8;        /* brand blue */
+    --ok: #34d399;            /* green  - resolved / closed */
+    --warn: #fbbf24;          /* amber  - medium / in progress */
+    --danger: #f87171;        /* red    - critical / overdue */
+    --info: #a78bfa;          /* purple - informational */
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+  }
+
+  header {
+    background: var(--panel);
+    border-bottom: 1px solid #334155;
+    padding: 1rem 1.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  header h1 { margin: 0; font-size: 1.4rem; }
+  header h1 small { color: var(--muted); font-weight: 400; font-size: 0.9rem; }
+
+  .toolbar { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+  button {
+    background: var(--accent);
+    color: #082f49;
+    border: none;
+    border-radius: 6px;
+    padding: 0.55rem 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 0.9rem;
+  }
+  button:hover { filter: brightness(1.1); }
+  button.ghost {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid #475569;
+  }
+  button.danger-btn { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+
+  main { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
+
+  /* ---- Dashboard stat cards ---- */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+  }
+  .stat {
+    background: var(--panel);
+    border-radius: 10px;
+    padding: 0.9rem 1rem;
+    border: 1px solid #334155;
+  }
+  .stat .num { font-size: 1.8rem; font-weight: 700; }
+  .stat .label { color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  .stat.critical .num { color: var(--danger); }
+  .stat.open .num { color: var(--accent); }
+  .stat.progress .num { color: var(--warn); }
+  .stat.ok .num { color: var(--ok); }
+
+  /* ---- Filter bar ---- */
+  .filters {
+    display: flex;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+    align-items: center;
+  }
+  .filters input[type="text"], .filters select {
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid #475569;
+    border-radius: 6px;
+    padding: 0.55rem 0.8rem;
+    font-size: 0.9rem;
+  }
+  .filters input[type="text"] { flex: 1; min-width: 200px; }
+
+  /* ---- Ticket cards ---- */
+  #ticket-list { display: grid; gap: 0.6rem; }
+  .ticket {
+    background: var(--panel);
+    border: 1px solid #334155;
+    border-radius: 10px;
+    padding: 0.9rem 1.1rem;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 1rem;
+    align-items: center;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .ticket:hover { border-color: var(--accent); }
+  .ticket .id { font-family: ui-monospace, monospace; color: var(--muted); font-size: 0.85rem; }
+  .ticket h3 { margin: 0.15rem 0; font-size: 1.05rem; }
+  .ticket .meta { color: var(--muted); font-size: 0.82rem; display: flex; gap: 0.8rem; flex-wrap: wrap; }
+  .ticket.overdue { border-left: 4px solid var(--danger); }
+
+  /* Priority + status pills */
+  .pill {
+    display: inline-block;
+    padding: 0.15rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .prio-Critical { background: #450a0a; color: var(--danger); }
+  .prio-High     { background: #451a03; color: #fb923c; }
+  .prio-Medium   { background: #422006; color: var(--warn); }
+  .prio-Low      { background: #052e22; color: var(--ok); }
+  .status-Open        { background: #0c4a6e; color: var(--accent); }
+  .status-InProgress  { background: #422006; color: var(--warn); }
+  .status-Resolved    { background: #052e22; color: var(--ok); }
+  .status-Closed      { background: #1e293b; color: var(--muted); border: 1px solid #475569; }
+
+  .empty {
+    text-align: center;
+    color: var(--muted);
+    padding: 3rem 1rem;
+    border: 2px dashed #334155;
+    border-radius: 10px;
+  }
+
+  /* ---- Modal (new ticket / ticket detail) ---- */
+  .modal-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: none;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 2rem 1rem;
+    overflow-y: auto;
+    z-index: 10;
+  }
+  .modal-backdrop.show { display: flex; }
+  .modal {
+    background: var(--panel);
+    border: 1px solid #475569;
+    border-radius: 12px;
+    width: 100%;
+    max-width: 640px;
+    padding: 1.5rem;
+  }
+  .modal h2 { margin-top: 0; }
+  .modal label { display: block; margin: 0.8rem 0 0.3rem; color: var(--muted); font-size: 0.85rem; }
+  .modal input[type="text"], .modal textarea, .modal select {
+    width: 100%;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid #475569;
+    border-radius: 6px;
+    padding: 0.6rem 0.8rem;
+    font-size: 0.95rem;
+    font-family: inherit;
+  }
+  .modal textarea { min-height: 90px; resize: vertical; }
+  .modal .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }
+  .modal .actions { display: flex; gap: 0.6rem; margin-top: 1.2rem; justify-content: flex-end; flex-wrap: wrap; }
+
+  /* ---- Comment / activity timeline ---- */
+  .timeline { margin: 1rem 0 0; padding: 0; list-style: none; }
+  .timeline li {
+    border-left: 2px solid #475569;
+    padding: 0.3rem 0 0.3rem 1rem;
+    margin-left: 0.4rem;
+    position: relative;
+  }
+  .timeline li .who { font-weight: 700; font-size: 0.85rem; }
+  .timeline li .when { color: var(--muted); font-size: 0.75rem; margin-left: 0.5rem; }
+  .timeline li p { margin: 0.25rem 0 0.6rem; font-size: 0.92rem; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🎫 Mini Helpdesk <small>— IT support ticket tracker</small></h1>
+  <div class="toolbar">
+    <button id="btn-new">+ New ticket</button>
+    <button id="btn-sample" class="ghost">Load sample data</button>
+    <button id="btn-export-csv" class="ghost">Export CSV</button>
+    <button id="btn-export-json" class="ghost">Export JSON</button>
+  </div>
+</header>
+
+<main>
+  <!-- Dashboard counters: rendered by JS -->
+  <section class="stats" id="stats"></section>
+
+  <!-- Search + dropdown filters -->
+  <section class="filters">
+    <input type="text" id="filter-search" placeholder="🔎 Search title, description, reporter, ID…">
+    <select id="filter-status">
+      <option value="">All statuses</option>
+      <option>Open</option>
+      <option>In Progress</option>
+      <option>Resolved</option>
+      <option>Closed</option>
+    </select>
+    <select id="filter-priority">
+      <option value="">All priorities</option>
+      <option>Critical</option>
+      <option>High</option>
+      <option>Medium</option>
+      <option>Low</option>
+    </select>
+    <select id="filter-category">
+      <option value="">All categories</option>
+      <option>Hardware</option>
+      <option>Software</option>
+      <option>Network</option>
+      <option>Access</option>
+      <option>Other</option>
+    </select>
+  </section>
+
+  <!-- Ticket list rendered by JS -->
+  <section id="ticket-list"></section>
+</main>
+
+<!-- New-ticket modal -->
+<div class="modal-backdrop" id="modal-new">
+  <div class="modal">
+    <h2>New ticket</h2>
+    <label>Title</label>
+    <input type="text" id="new-title" placeholder="e.g. VPN drops every 30 minutes">
+    <label>Description</label>
+    <textarea id="new-desc" placeholder="What is happening? What have you tried? Any error messages?"></textarea>
+    <div class="row">
+      <div>
+        <label>Priority</label>
+        <select id="new-priority">
+          <option>Low</option>
+          <option selected>Medium</option>
+          <option>High</option>
+          <option>Critical</option>
+        </select>
+      </div>
+      <div>
+        <label>Category</label>
+        <select id="new-category">
+          <option>Hardware</option>
+          <option>Software</option>
+          <option>Network</option>
+          <option>Access</option>
+          <option>Other</option>
+        </select>
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>Reporter</label>
+        <input type="text" id="new-reporter" placeholder="Who reported it?">
+      </div>
+      <div>
+        <label>Assignee</label>
+        <input type="text" id="new-assignee" placeholder="Who is working on it?">
+      </div>
+    </div>
+    <div class="actions">
+      <button class="ghost" id="btn-cancel-new">Cancel</button>
+      <button id="btn-save-new">Create ticket</button>
+    </div>
+  </div>
+</div>
+
+<!-- Ticket-detail modal -->
+<div class="modal-backdrop" id="modal-detail">
+  <div class="modal">
+    <div id="detail-body"></div>
+    <label>Add a comment / work note</label>
+    <textarea id="detail-comment" placeholder="Troubleshooting steps, updates for the requester…"></textarea>
+    <div class="actions">
+      <button class="danger-btn" id="btn-delete">Delete</button>
+      <button class="ghost" id="btn-close-detail">Close</button>
+      <button id="btn-add-comment">Add note</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =====================================================================
+   Mini Helpdesk — a single-file IT support ticket tracker.
+   All data lives in localStorage (the browser's key/value store), so
+   tickets survive a page reload with no server needed. Tickets are kept
+   as plain JavaScript objects and converted to/from JSON with
+   JSON.stringify / JSON.parse — the same pattern used by REST APIs
+   (an API response is just JSON that gets parsed into objects like this).
+   ===================================================================== */
+
+'use strict';
+
+// localStorage key under which all tickets are stored.
+const STORAGE_KEY = 'mini-helpdesk-tickets-v1';
+
+// How many hours a ticket can sit without being touched before the app
+// flags it as "overdue" in red. Support teams call this breaching the SLA
+// (Service Level Agreement) — the promised response/resolution time.
+const OVERDUE_HOURS = 48;
+
+// ---- State ------------------------------------------------------------
+// The whole app state is one plain object. "state.tickets" is the source
+// of truth; everything on screen is rendered from it.
+let state = { tickets: [], nextId: 1 };
+let activeTicketId = null;   // which ticket the detail modal is showing
+
+/* --------------------------- Persistence ---------------------------- */
+// Save the full state to localStorage as a JSON string.
+function save() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+// Load state from localStorage. If nothing is stored yet (or the stored
+// data is corrupted), fall back to an empty state instead of crashing.
+function load() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      // Basic sanity check so a mangled value can't break the app.
+      if (parsed && Array.isArray(parsed.tickets) && typeof parsed.nextId === 'number') {
+        state = parsed;
+      }
+    }
+  } catch (err) {
+    console.warn('Could not read saved tickets, starting fresh.', err);
+  }
+}
+
+/* --------------------------- Ticket model --------------------------- */
+// Tickets are plain objects. Each one gets a human-friendly ID like
+// "TICKET-007", a creation timestamp, and an empty comment list.
+// Timestamps are stored as ISO strings ("2026-09-26T14:03:00.000Z") because
+// strings survive JSON; Date objects do not.
+function makeTicket({ title, description, priority, category, reporter, assignee }) {
+  const ticket = {
+    id: 'TICKET-' + String(state.nextId++).padStart(3, '0'),
+    title: title.trim(),
+    description: description.trim(),
+    priority,
+    category,
+    status: 'Open',                 // Open -> In Progress -> Resolved -> Closed
+    reporter: reporter.trim() || 'Unassigned',
+    assignee: assignee.trim() || 'Unassigned',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    comments: []                    // work notes / activity timeline
+  };
+  return ticket;
+}
+
+// Append an entry to a ticket's activity timeline and refresh its
+// "last updated" timestamp.
+function addTimelineEntry(ticket, who, text) {
+  ticket.comments.push({ who, text, at: new Date().toISOString() });
+  ticket.updatedAt = new Date().toISOString();
+}
+
+/* --------------------------- Helpers -------------------------------- */
+// Turn an ISO timestamp into a short, readable local date/time.
+function fmtDate(iso) {
+  return new Date(iso).toLocaleString(undefined, {
+    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+  });
+}
+
+// Whole hours between now and a past timestamp.
+function ageHours(iso) {
+  return (Date.now() - new Date(iso).getTime()) / 3_600_000;
+}
+
+// A ticket is "overdue" when it still needs work (Open or In Progress)
+// and its last update is older than the SLA threshold.
+function isOverdue(ticket) {
+  return (ticket.status === 'Open' || ticket.status === 'In Progress') &&
+         ageHours(ticket.updatedAt) > OVERDUE_HOURS;
+}
+
+// Small helper: build a CSS-class-safe pill for a priority or status.
+// Spaces become "" so "In Progress" -> "status-InProgress".
+const cssSafe = (s) => s.replace(/\s+/g, '');
+
+// Escape text before putting it into HTML. This matters because ticket
+// titles/descriptions are user input — without escaping, a reporter could
+// inject <script> tags (a stored XSS bug). Always escape untrusted text.
+function esc(s) {
+  return String(s)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+/* --------------------------- Rendering ------------------------------ */
+// Recompute the four dashboard counters from the current tickets and
+// redraw the stat cards.
+function renderStats() {
+  const t = state.tickets;
+  const open     = t.filter(x => x.status === 'Open').length;
+  const progress = t.filter(x => x.status === 'In Progress').length;
+  const critical = t.filter(x => x.priority === 'Critical' && (x.status === 'Open' || x.status === 'In Progress')).length;
+  const resolved = t.filter(x => x.status === 'Resolved' || x.status === 'Closed').length;
+
+  document.getElementById('stats').innerHTML = `
+    <div class="stat open"><div class="num">${open}</div><div class="label">Open</div></div>
+    <div class="stat progress"><div class="num">${progress}</div><div class="label">In progress</div></div>
+    <div class="stat critical"><div class="num">${critical}</div><div class="label">Critical &amp; open</div></div>
+    <div class="stat ok"><div class="num">${resolved}</div><div class="label">Resolved / closed</div></div>
+  `;
+}
+
+// Read the filter bar, apply every active filter to the ticket list, then
+// render matching tickets sorted by priority (Critical first) and age
+// (oldest first) — the order a real support queue would be worked.
+function renderList() {
+  const q        = document.getElementById('filter-search').value.trim().toLowerCase();
+  const fStatus  = document.getElementById('filter-status').value;
+  const fPrio    = document.getElementById('filter-priority').value;
+  const fCat     = document.getElementById('filter-category').value;
+
+  const prioRank = { Critical: 0, High: 1, Medium: 2, Low: 3 };
+
+  const visible = state.tickets
+    .filter(t =>
+      (!fStatus || t.status === fStatus) &&
+      (!fPrio   || t.priority === fPrio) &&
+      (!fCat    || t.category === fCat) &&
+      (!q || (t.title + ' ' + t.description + ' ' + t.reporter + ' ' + t.assignee + ' ' + t.id)
+              .toLowerCase().includes(q))
+    )
+    .sort((a, b) =>
+      (prioRank[a.priority] - prioRank[b.priority]) ||
+      (new Date(a.createdAt) - new Date(b.createdAt))
+    );
+
+  const list = document.getElementById('ticket-list');
+
+  if (visible.length === 0) {
+    list.innerHTML = `<div class="empty">No tickets match. Create one with <strong>+ New ticket</strong>,
+      or click <strong>Load sample data</strong> to try the app with realistic tickets.</div>`;
+    return;
+  }
+
+  list.innerHTML = visible.map(t => `
+    <div class="ticket ${isOverdue(t) ? 'overdue' : ''}" data-id="${esc(t.id)}">
+      <div><span class="id">${esc(t.id)}</span></div>
+      <div>
+        <h3>${esc(t.title)} ${isOverdue(t) ? '🔴' : ''}</h3>
+        <div class="meta">
+          <span class="pill prio-${cssSafe(t.priority)}">${esc(t.priority)}</span>
+          <span class="pill status-${cssSafe(t.status)}">${esc(t.status)}</span>
+          <span>📁 ${esc(t.category)}</span>
+          <span>👤 ${esc(t.assignee)}</span>
+          <span>🕒 updated ${fmtDate(t.updatedAt)}</span>
+          ${t.comments.length ? `<span>💬 ${t.comments.length} note${t.comments.length > 1 ? 's' : ''}</span>` : ''}
+        </div>
+      </div>
+      <div class="meta">Age: ${Math.floor(ageHours(t.createdAt))}h</div>
+    </div>
+  `).join('');
+
+  // Clicking a card opens its detail view. Event delegation: one listener
+  // on the container instead of one per card (cleaner and faster).
+  list.querySelectorAll('.ticket').forEach(card => {
+    card.addEventListener('click', () => openDetail(card.dataset.id));
+  });
+}
+
+// Redraw everything: stats + list.
+function render() {
+  renderStats();
+  renderList();
+}
+
+/* --------------------------- Detail view ---------------------------- */
+function openDetail(id) {
+  const t = state.tickets.find(x => x.id === id);
+  if (!t) return;
+  activeTicketId = id;
+
+  const statuses = ['Open', 'In Progress', 'Resolved', 'Closed'];
+  document.getElementById('detail-body').innerHTML = `
+    <h2>${esc(t.id)} — ${esc(t.title)}</h2>
+    <div class="meta" style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.5rem;">
+      <span class="pill prio-${cssSafe(t.priority)}">${esc(t.priority)}</span>
+      <span class="pill status-${cssSafe(t.status)}">${esc(t.status)}</span>
+      <span style="color:var(--muted);font-size:0.85rem;">📁 ${esc(t.category)}</span>
+    </div>
+    <p>${esc(t.description) || '<i style="color:var(--muted)">No description provided.</i>'}</p>
+    <div class="row">
+      <div>
+        <label>Status</label>
+        <select id="detail-status">
+          ${statuses.map(s => `<option ${s === t.status ? 'selected' : ''}>${s}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label>Priority</label>
+        <select id="detail-priority">
+          ${['Critical', 'High', 'Medium', 'Low'].map(p => `<option ${p === t.priority ? 'selected' : ''}>${p}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>Reporter</label>
+        <input type="text" id="detail-reporter" value="${esc(t.reporter)}">
+      </div>
+      <div>
+        <label>Assignee</label>
+        <input type="text" id="detail-assignee" value="${esc(t.assignee)}">
+      </div>
+    </div>
+    <h3 style="margin-bottom:0.2rem;">Activity</h3>
+    ${t.comments.length === 0
+      ? '<p style="color:var(--muted);font-size:0.9rem;">No work notes yet.</p>'
+      : `<ul class="timeline">${t.comments.map(c => `
+          <li><span class="who">${esc(c.who)}</span><span class="when">${fmtDate(c.at)}</span>
+          <p>${esc(c.text)}</p></li>`).join('')}</ul>`}
+    <p style="color:var(--muted);font-size:0.8rem;">Created ${fmtDate(t.createdAt)} · Last updated ${fmtDate(t.updatedAt)}</p>
+  `;
+
+  // Any change in the detail form updates the ticket immediately and logs
+  // the change on the timeline — this is the audit trail real ticketing
+  // systems keep (who changed what, when).
+  const wire = (elId, field, label) => {
+    document.getElementById(elId).addEventListener('change', (e) => {
+      const old = t[field];
+      t[field] = e.target.value;
+      if (old !== t[field]) addTimelineEntry(t, 'System', `${label} changed from "${old}" to "${t[field]}".`);
+      save(); render(); openDetail(t.id);   // re-render so pills/stats refresh
+    });
+  };
+  wire('detail-status', 'status', 'Status');
+  wire('detail-priority', 'priority', 'Priority');
+  wire('detail-reporter', 'reporter', 'Reporter');
+  wire('detail-assignee', 'assignee', 'Assignee');
+
+  document.getElementById('detail-comment').value = '';
+  document.getElementById('modal-detail').classList.add('show');
+}
+
+/* --------------------------- Exports -------------------------------- */
+// Download helper: build a Blob in memory and click a temporary <a>
+// element. No server needed.
+function download(filename, text, mime) {
+  const blob = new Blob([text], { type: mime });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  URL.revokeObjectURL(a.href);
+  a.remove();
+}
+
+// CSV export — the format you'd attach to an incident report or import
+// into Excel. Fields containing quotes/commas are wrapped in quotes,
+// with inner quotes doubled (RFC 4180).
+function exportCSV() {
+  const csvEsc = (v) => `"${String(v).replaceAll('"', '""')}"`;
+  const header = ['ID', 'Title', 'Status', 'Priority', 'Category', 'Reporter', 'Assignee', 'Created', 'Updated', 'Notes'];
+  const rows = state.tickets.map(t => [
+    t.id, t.title, t.status, t.priority, t.category,
+    t.reporter, t.assignee, t.createdAt, t.updatedAt, t.comments.length
+  ].map(csvEsc).join(','));
+  download('tickets.csv', [header.map(csvEsc).join(','), ...rows].join('\r\n'), 'text/csv');
+}
+
+// JSON export — a full backup of the data, and the same shape a REST API
+// would return. Re-import by hand if needed: it's just an object.
+function exportJSON() {
+  download('tickets.json', JSON.stringify(state, null, 2), 'application/json');
+}
+
+/* --------------------------- Sample data ---------------------------- */
+// Realistic demo tickets so the app is fun to explore immediately.
+// Note: "updatedAt" values are backdated with Date arithmetic to show off
+// the overdue highlighting (one ticket is deliberately stale).
+function loadSampleData() {
+  const now = Date.now();
+  const hoursAgo = (h) => new Date(now - h * 3_600_000).toISOString();
+  const samples = [
+    { title: 'VPN drops every ~30 minutes on campus Wi-Fi', priority: 'High', category: 'Network',
+      reporter: 'Priya S.', assignee: 'Asad', status: 'Open', ageH: 26,
+      desc: 'User connects to VPN fine, then loses the tunnel after about 30 minutes. Reconnecting works. Only happens on campus Wi-Fi, not at home. Suspecting idle-timeout or NAT issue.',
+      notes: [['Asad', 'Reproduced on test laptop. Tunnel drops at 29–31 min consistently — looks like a timeout, not a signal issue.']] },
+    { title: 'New hire laptop: no admin rights, cannot install dev tools', priority: 'Medium', category: 'Access',
+      reporter: 'Marcus T.', assignee: 'Asad', status: 'In Progress', ageH: 30,
+      desc: 'Started Monday. Account is in the wrong AD group, so no local admin. Needs VS Code + Git installed for onboarding tasks.',
+      notes: [['Asad', 'Confirmed: account missing "DEV-Workstations" group. Ticket raised with identity team.'], ['Asad', 'Workaround approved: installed VS Code via software center in the meantime.']] },
+    { title: 'Payroll portal shows 500 error on submit', priority: 'Critical', category: 'Software',
+      reporter: 'HR Desk', assignee: 'Unassigned', status: 'Open', ageH: 3,
+      desc: 'Multiple employees report HTTP 500 when submitting timesheets since this morning. Blocks payroll run on Friday — treat as P1.',
+      notes: [] },
+    { title: 'Printer on 3rd floor jams on every duplex job', priority: 'Low', category: 'Hardware',
+      reporter: 'Front Desk', assignee: 'Asad', status: 'Resolved', ageH: 90,
+      desc: 'HP LaserJet MFP jams only when printing double-sided. Single-sided works fine.',
+      notes: [['Asad', 'Cleaned duplex rollers, updated firmware. Test-printed 20 duplex pages with no jams.'], ['System', 'Status changed from "In Progress" to "Resolved".']] },
+    { title: 'Stale ticket to demo overdue highlighting', priority: 'High', category: 'Network',
+      reporter: 'QA Team', assignee: 'Unassigned', status: 'Open', ageH: 72,
+      desc: 'This ticket was left untouched for 72 hours on purpose — it should show a red border (SLA breach > 48h).',
+      notes: [] },
+    { title: 'Phishing email reported: fake "IT password reset"', priority: 'Critical', category: 'Access',
+      reporter: 'Lena K.', assignee: 'Asad', status: 'In Progress', ageH: 5,
+      desc: 'User received an email claiming to be IT asking for credentials via a link. Forwarded the headers. Link domain is misspelled (micros0ft).',
+      notes: [['Asad', 'Confirmed phishing. Blocked sender domain at the mail gateway and pushed a warning to #general. Checking logs for other recipients.']] },
+  ];
+
+  state = { tickets: [], nextId: 1 };
+  for (const s of samples) {
+    const t = makeTicket({
+      title: s.title, description: s.desc, priority: s.priority,
+      category: s.category, reporter: s.reporter, assignee: s.assignee
+    });
+    t.status = s.status;
+    t.createdAt = hoursAgo(s.ageH);
+    t.updatedAt = hoursAgo(Math.max(1, s.ageH - 2));
+    for (const [who, text] of s.notes) {
+      t.comments.push({ who, text, at: hoursAgo(Math.max(1, s.ageH - 3)) });
+    }
+    state.tickets.push(t);
+  }
+  save();
+  render();
+}
+
+/* --------------------------- Event wiring --------------------------- */
+function init() {
+  load();
+  render();
+
+  const show = (id) => document.getElementById(id).classList.add('show');
+  const hide = (id) => document.getElementById(id).classList.remove('show');
+
+  document.getElementById('btn-new').addEventListener('click', () => show('modal-new'));
+  document.getElementById('btn-cancel-new').addEventListener('click', () => hide('modal-new'));
+  document.getElementById('btn-close-detail').addEventListener('click', () => hide('modal-detail'));
+  document.getElementById('btn-sample').addEventListener('click', () => {
+    if (state.tickets.length === 0 || confirm('Replace current tickets with sample data?')) loadSampleData();
+  });
+  document.getElementById('btn-export-csv').addEventListener('click', exportCSV);
+  document.getElementById('btn-export-json').addEventListener('click', exportJSON);
+
+  document.getElementById('btn-save-new').addEventListener('click', () => {
+    const title = document.getElementById('new-title').value;
+    if (!title.trim()) { alert('A ticket needs a title.'); return; }
+    const t = makeTicket({
+      title,
+      description: document.getElementById('new-desc').value,
+      priority: document.getElementById('new-priority').value,
+      category: document.getElementById('new-category').value,
+      reporter: document.getElementById('new-reporter').value,
+      assignee: document.getElementById('new-assignee').value
+    });
+    addTimelineEntry(t, 'System', 'Ticket created.');
+    state.tickets.push(t);
+    save(); render(); hide('modal-new');
+    // Clear the form for next time.
+    ['new-title', 'new-desc', 'new-reporter', 'new-assignee'].forEach(id => document.getElementById(id).value = '');
+  });
+
+  document.getElementById('btn-add-comment').addEventListener('click', () => {
+    const t = state.tickets.find(x => x.id === activeTicketId);
+    const text = document.getElementById('detail-comment').value.trim();
+    if (!t || !text) return;
+    addTimelineEntry(t, t.assignee !== 'Unassigned' ? t.assignee : 'Support', text);
+    save(); openDetail(t.id); render();
+  });
+
+  document.getElementById('btn-delete').addEventListener('click', () => {
+    const t = state.tickets.find(x => x.id === activeTicketId);
+    if (!t) return;
+    if (confirm(`Delete ${t.id} permanently?`)) {
+      state.tickets = state.tickets.filter(x => x.id !== t.id);
+      save(); render(); hide('modal-detail');
+    }
+  });
+
+  // Filters re-render the list on every keystroke / change.
+  ['filter-search', 'filter-status', 'filter-priority', 'filter-category'].forEach(id => {
+    document.getElementById(id).addEventListener('input', renderList);
+  });
+
+  // Close a modal by clicking its dark backdrop.
+  document.querySelectorAll('.modal-backdrop').forEach(m => {
+    m.addEventListener('click', (e) => { if (e.target === m) m.classList.remove('show'); });
+  });
+}
+
+// Start the app once the HTML is parsed (script is at the end of <body>,
+// so the DOM is already ready).
+init();
+</script>
+</body>
+</html>
