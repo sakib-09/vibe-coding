@@ -8,3 +8,4 @@ single day, with its own README, source, and usage instructions.
 | [01](day-01-port-scanner) | TCP Port Scanner | Scan open TCP ports on a host with a multithreaded Python CLI |
 | [02](day-02-log-analyzer) | Log Analyzer | Turn an Apache/Nginx access log into a support dashboard (single-file web app) |
 | [03](day-03-ticket-tracker) | Mini Helpdesk | IT support ticket tracker with SLA highlighting, audit trail, CSV/JSON export (single-file web app) |
+| [04](day-04-link-checker) | QA Link Checker | CLI that checks URL lists for broken links, follows redirects, times responses, writes JSON/CSV reports (Node.js stdlib only) |
