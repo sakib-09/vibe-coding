@@ -1,0 +1,8 @@
+# Example URL list for link-checker.js
+# Lines starting with # are ignored. Blank lines are ignored too.
+
+https://example.com
+https://example.com/this-page-does-not-exist
+https://github.com
+http://github.com
+https://this-domain-should-not-exist-xyz123.com
