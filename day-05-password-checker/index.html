@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Password Strength Checker &amp; Policy Auditor</title>
+<!--
+  Day 05 — vibe-coding
+  Password Strength Checker & Policy Auditor (single-file web app)
+
+  A help-desk-friendly tool that grades a password against a configurable
+  corporate-style password policy, estimates its entropy and crack time,
+  and generates compliant random passwords.
+
+  Privacy note (important, and a good interview talking point):
+  everything runs 100% client-side. Nothing is ever sent over the network —
+  the page has no fetch(), no analytics, no form submission. That is why a
+  real password checker must be client-side only.
+
+  HOW TO RUN:
+    Just open this file in any browser: double-click index.html,
+    or:  python3 -m http.server 8000   then visit http://localhost:8000
+-->
+<style>
+  :root {
+    --bg: #0f172a; --panel: #1e293b; --panel2: #273449;
+    --text: #e2e8f0; --muted: #94a3b8;
+    --green: #22c55e; --amber: #f59e0b; --red: #ef4444; --blue: #38bdf8;
+    --border: #334155;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text);
+    margin: 0; padding: 24px; line-height: 1.5;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; }
+  h1 { font-size: 1.6rem; margin-bottom: 4px; }
+  .sub { color: var(--muted); margin-top: 0; font-size: 0.95rem; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 18px; margin: 16px 0;
+  }
+  .card h2 { font-size: 1.05rem; margin: 0 0 10px; }
+  label { display: block; font-size: 0.9rem; color: var(--muted); margin-bottom: 6px; }
+  input[type="text"], input[type="password"] {
+    width: 100%; padding: 10px 12px; font-size: 1rem; font-family: ui-monospace, monospace;
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+  }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  .row .grow { flex: 1 1 200px; }
+  .checkbox { display: flex; gap: 8px; align-items: center; color: var(--text); font-size: 0.95rem; }
+  /* Strength meter */
+  .meter { height: 12px; background: var(--bg); border-radius: 999px; overflow: hidden; margin: 12px 0 4px; }
+  .meter > div { height: 100%; width: 0; border-radius: 999px; transition: width .25s, background .25s; }
+  .meter-label { font-weight: 600; font-size: 1rem; }
+  .verdict { margin: 8px 0 0; color: var(--muted); font-size: 0.95rem; }
+  .verdict strong { color: var(--text); }
+  /* Rule checklist */
+  .rules { list-style: none; padding: 0; margin: 10px 0 0; }
+  .rules li { padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 0.95rem; }
+  .rules li:last-child { border-bottom: none; }
+  .pass { color: var(--green); } .fail { color: var(--red); }
+  .fix { color: var(--amber); font-size: 0.88rem; }
+  /* Buttons */
+  button {
+    background: var(--blue); color: #06283a; border: none; border-radius: 8px;
+    padding: 10px 16px; font-size: 0.95rem; font-weight: 600; cursor: pointer;
+  }
+  button:hover { filter: brightness(1.1); }
+  button.ghost { background: var(--panel2); color: var(--text); border: 1px solid var(--border); }
+  input[type="range"] { width: 180px; }
+  .gen-output {
+    font-family: ui-monospace, monospace; font-size: 1.1rem; word-break: break-all;
+    background: var(--bg); border: 1px dashed var(--border); border-radius: 8px;
+    padding: 12px; margin: 12px 0; min-height: 52px;
+  }
+  .presets { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .presets button.active { outline: 2px solid var(--text); }
+  .policy-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; }
+  @media (max-width: 560px) { .policy-grid { grid-template-columns: 1fr; } }
+  .footnote { color: var(--muted); font-size: 0.82rem; }
+  .crack { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 8px; font-size: 0.95rem; }
+  .crack div span { display: block; color: var(--muted); font-size: 0.8rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🔐 Password Strength Checker &amp; Policy Auditor</h1>
+  <p class="sub">Runs entirely in your browser — your password never leaves this page.
+     Pick a policy preset, type a password, and get an honest grade.</p>
+
+  <!-- ============ 1. POLICY PRESETS ============ -->
+  <div class="card">
+    <h2>1. Choose a password policy</h2>
+    <div class="presets">
+      <button class="ghost" data-preset="basic">Basic</button>
+      <button class="ghost active" data-preset="standard">Standard (recommended)</button>
+      <button class="ghost" data-preset="strict">Strict (corporate)</button>
+    </div>
+    <div class="policy-grid" id="policyGrid">
+      <!-- checkboxes rendered by JS so the active policy stays in sync -->
+    </div>
+    <p class="footnote">Policies mirror what an IT help desk enforces: minimum length,
+       character classes, banned common passwords, and pattern checks.</p>
+  </div>
+
+  <!-- ============ 2. CHECKER ============ -->
+  <div class="card">
+    <h2>2. Check a password</h2>
+    <label for="pw">Password (never transmitted — typed only)</label>
+    <div class="row">
+      <div class="grow"><input type="password" id="pw" autocomplete="off" spellcheck="false" placeholder="Type a password to grade it…"></div>
+      <button class="ghost" id="toggleVis" type="button">Show</button>
+    </div>
+    <div class="meter"><div id="meterFill"></div></div>
+    <div class="meter-label" id="meterLabel">—</div>
+    <p class="verdict" id="verdict"></p>
+    <div class="crack">
+      <div><span>Entropy (password randomness)</span><strong id="entropyOut">—</strong></div>
+      <div><span>Est. crack time @ 1 billion guesses/sec</span><strong id="crackSlow">—</strong></div>
+      <div><span>Est. crack time @ 1 trillion guesses/sec (GPU rig)</span><strong id="crackFast">—</strong></div>
+    </div>
+    <ul class="rules" id="ruleList"></ul>
+  </div>
+
+  <!-- ============ 3. GENERATOR ============ -->
+  <div class="card">
+    <h2>3. Generate a compliant password</h2>
+    <div class="row" style="margin-bottom:12px">
+      <label class="checkbox">Length: <strong id="lenOut">16</strong>
+        <input type="range" id="genLen" min="8" max="64" value="16"></label>
+    </div>
+    <div class="row" style="margin-bottom:12px">
+      <label class="checkbox"><input type="checkbox" id="genLower" checked> a–z</label>
+      <label class="checkbox"><input type="checkbox" id="genUpper" checked> A–Z</label>
+      <label class="checkbox"><input type="checkbox" id="genDigit" checked> 0–9</label>
+      <label class="checkbox"><input type="checkbox" id="genSymbol" checked> symbols</label>
+      <label class="checkbox"><input type="checkbox" id="genNoAmbig" checked> exclude ambiguous (0 O 1 l I)</label>
+    </div>
+    <div class="row">
+      <button id="genBtn" type="button">Generate</button>
+      <button class="ghost" id="copyBtn" type="button">Copy</button>
+    </div>
+    <div class="gen-output" id="genOut">—</div>
+    <p class="verdict" id="genVerdict"></p>
+    <p class="footnote">Generated with <code>crypto.getRandomValues()</code> — the browser's
+      cryptographically secure random source, not <code>Math.random()</code>.
+      Every generated password is automatically graded against the policy above.</p>
+  </div>
+
+  <p class="footnote">Built as a single HTML file with no dependencies and no network calls.
+     For demo and learning purposes — a real enterprise enforces these rules server-side
+     and stores only salted hashes (e.g. bcrypt), never plaintext passwords.</p>
+</div>
+
+<script>
+"use strict";
+/* =====================================================================
+   CORE LOGIC — pure functions, no DOM access.
+   (Structured this way on purpose: it makes the logic unit-testable and
+   is the same separation of concerns you'd use in any support tool.)
+   ===================================================================== */
+
+/**
+ * A short blocklist of the world's most common passwords.
+ * In a real system this list has tens of thousands of entries and lives
+ * server-side; here it's trimmed so the page stays a single file.
+ */
+const COMMON_PASSWORDS = [
+  "password","123456","12345678","123456789","1234567","12345","1234567890",
+  "qwerty","abc123","football","monkey","letmein","dragon","111111","baseball",
+  "iloveyou","trustno1","sunshine","master","welcome","shadow","ashley",
+  "michael","ninja","jordan","mustang","password1","123123","admin","welcome1",
+  "qwerty123","1q2w3e4r","1qaz2wsx","654321","jesus","password123","superman",
+  "princess","starwars","whatever","freedom","qazwsx","trustno","654321",
+  "jennifer","hunter","buster","soccer","harley","batman","andrew","tigger",
+  "charlie","robert","thomas","hockey","ranger","daniel","starwars1","klaster",
+  "112233","george","asshole","computer","michelle","jessica","pepper",
+  "131313","freedom1","passw0rd","123qwe","killer","joshua","maggie",
+  "starwars123","target123","qwertyuiop","mynoob","123321","666666","charlie1",
+  "aa123456","donald","qwe123","admin123","solo","loveme","zaq1zaq1",
+  "hello123","charlie123","freedom123","qazwsxedc","123abc","admin1","welcome123",
+  "football1","jesus1","michael1","ninja123","sunshine1","master123","shadow1",
+  "dragon123","monkey123","letmein123","trustno1!","password12","superman1"
+];
+
+/** Policy presets, mirroring typical help-desk enforcement tiers. */
+const PRESETS = {
+  basic:    { minLength: 8,  requireLower: true,  requireUpper: false, requireDigit: true,  requireSymbol: false, banCommon: true,  banPatterns: false },
+  standard: { minLength: 12, requireLower: true,  requireUpper: true,  requireDigit: true,  requireSymbol: true,  banCommon: true,  banPatterns: true  },
+  strict:   { minLength: 16, requireLower: true,  requireUpper: true,  requireDigit: true,  requireSymbol: true,  banCommon: true,  banPatterns: true  }
+};
+
+const POLICY_LABELS = {
+  minLength:     p => `At least ${p.minLength} characters long`,
+  requireLower:  () => "Contains a lowercase letter (a–z)",
+  requireUpper:  () => "Contains an uppercase letter (A–Z)",
+  requireDigit:  () => "Contains a digit (0–9)",
+  requireSymbol: () => "Contains a symbol (!@#$…)",
+  banCommon:     () => "Not on the common-password blocklist",
+  banPatterns:   () => "No simple patterns (abcd, 1234, qwer, aaa)"
+};
+
+const POLICY_FIXES = {
+  minLength:     p => `Make it at least ${p.minLength} characters — length beats complexity.`,
+  requireLower:  () => "Add a lowercase letter.",
+  requireUpper:  () => "Add an uppercase letter.",
+  requireDigit:  () => "Add a digit.",
+  requireSymbol: () => "Add a symbol like ! or #.",
+  banCommon:     () => "This is one of the first guesses attackers try — pick something unique.",
+  banPatterns:   () => "Avoid sequences and repeats; attackers' dictionaries include them."
+};
+
+/** True if the password contains a 4+ character ascending/descending sequence or a 3+ repeat. */
+function hasSimplePattern(pw) {
+  const s = pw.toLowerCase();
+  // repeated characters: "aaa", "1111"
+  if (/(.)\1\1/.test(s)) return true;
+  // sequences: check every window of 4 for straight runs (abc, 321, qwe...)
+  for (let i = 0; i + 4 <= s.length; i++) {
+    const codes = [...s.slice(i, i + 4)].map(c => c.charCodeAt(0));
+    const asc  = codes.every((v, j) => j === 0 || v === codes[j - 1] + 1);
+    const desc = codes.every((v, j) => j === 0 || v === codes[j - 1] - 1);
+    if (asc || desc) return true;
+  }
+  // common keyboard walks
+  const walks = ["qwer", "asdf", "zxcv", "qaz", "wsx", "zaq"];
+  return walks.some(w => s.includes(w));
+}
+
+/**
+ * Estimate entropy (randomness) in bits.
+ * entropy = length × log2(pool size), where pool size depends on which
+ * character classes are present. This is the same math behind "a 12-char
+ * password from 94 symbols ≈ 79 bits of entropy".
+ */
+function estimateEntropy(pw) {
+  let pool = 0;
+  if (/[a-z]/.test(pw)) pool += 26;
+  if (/[A-Z]/.test(pw)) pool += 26;
+  if (/[0-9]/.test(pw)) pool += 10;
+  if (/[^a-zA-Z0-9]/.test(pw)) pool += 32; // printable symbols, rounded
+  if (pool === 0) return 0;
+  return pw.length * Math.log2(pool);
+}
+
+/** Human-readable duration from seconds (for crack-time display). */
+function humanDuration(seconds) {
+  if (!isFinite(seconds)) return "effectively never";
+  const units = [["year", 31557600], ["day", 86400], ["hour", 3600], ["minute", 60], ["second", 1]];
+  if (seconds < 1) return "instantly";
+  for (const [name, len] of units) {
+    if (seconds >= len) {
+      const n = Math.floor(seconds / len);
+      const big = seconds >= len * 1000;
+      return `~${big ? n.toLocaleString() : n} ${name}${n === 1 ? "" : "s"}`;
+    }
+  }
+  return "instantly";
+}
+
+/**
+ * Grade a password against a policy. Returns an object with:
+ *  - passed: boolean (all enabled rules pass)
+ *  - rules: [{key, label, ok, fix}] for the checklist UI
+ *  - entropyBits, crackSlowSec, crackFastSec
+ *  - score: 0–100, label: Weak/Fair/Strong/Excellent
+ */
+function gradePassword(pw, policy) {
+  const lower = pw.toLowerCase();
+  const ruleDefs = [
+    { key: "minLength",    enabled: true,               ok: pw.length >= policy.minLength },
+    { key: "requireLower", enabled: policy.requireLower, ok: /[a-z]/.test(pw) },
+    { key: "requireUpper", enabled: policy.requireUpper, ok: /[A-Z]/.test(pw) },
+    { key: "requireDigit", enabled: policy.requireDigit, ok: /[0-9]/.test(pw) },
+    { key: "requireSymbol",enabled: policy.requireSymbol,ok: /[^a-zA-Z0-9]/.test(pw) },
+    { key: "banCommon",    enabled: policy.banCommon,  ok: !COMMON_PASSWORDS.includes(lower) && !COMMON_PASSWORDS.some(c => lower === c + "1" || lower === c + "123") },
+    { key: "banPatterns",  enabled: policy.banPatterns, ok: !hasSimplePattern(pw) }
+  ];
+  const rules = ruleDefs
+    .filter(r => r.enabled)
+    .map(r => ({
+      key: r.key, label: POLICY_LABELS[r.key](policy), ok: r.ok,
+      fix: r.ok ? "" : POLICY_FIXES[r.key](policy)
+    }));
+
+  const entropyBits = estimateEntropy(pw);
+  // Average case: attacker tries half the keyspace before succeeding.
+  const guessesSlow = Math.pow(2, entropyBits - 1) / 1e9;   // 1B guesses/sec (CPU)
+  const guessesFast = Math.pow(2, entropyBits - 1) / 1e12; // 1T guesses/sec (GPU rig)
+
+  // Score: entropy carries the weight, failed rules cost points.
+  const failed = rules.filter(r => !r.ok).length;
+  const score = Math.max(0, Math.min(100, Math.round(entropyBits * 1.1) - failed * 18));
+  const label = score >= 80 ? "Excellent" : score >= 60 ? "Strong" : score >= 35 ? "Fair" : "Weak";
+
+  return {
+    passed: rules.every(r => r.ok) && pw.length > 0,
+    rules, entropyBits,
+    crackSlowSec: guessesSlow, crackFastSec: guessesFast,
+    score, label
+  };
+}
+
+/**
+ * Generate a random password. Uses crypto.getRandomValues (secure) when
+ * available; falls back to Math.random with a clear warning (never rely on
+ * Math.random for real secrets — it's predictable).
+ * Guarantees at least one char from each selected class.
+ */
+function generatePassword(length, opts) {
+  let sets = [];
+  if (opts.lower)  sets.push("abcdefghijklmnopqrstuvwxyz");
+  if (opts.upper)  sets.push("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+  if (opts.digit)  sets.push("0123456789");
+  if (opts.symbol) sets.push("!@#$%^&*()-_=+[]{};:,.<>?/~");
+  if (opts.noAmbig) sets = sets.map(s => s.replace(/[0O1lI]/g, ""));
+  sets = sets.filter(s => s.length > 0);
+  if (sets.length === 0) throw new Error("Select at least one character class.");
+
+  const all = sets.join("");
+  const rand = max => {
+    if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+      const buf = new Uint32Array(1);
+      crypto.getRandomValues(buf);
+      return buf[0] % max; // modulo bias is negligible for this purpose
+    }
+    console.warn("crypto.getRandomValues unavailable — using Math.random (not secure)");
+    return Math.floor(Math.random() * max);
+  };
+
+  // Start with one guaranteed char from each class, then fill the rest.
+  const chars = sets.map(s => s[rand(s.length)]);
+  while (chars.length < length) chars.push(all[rand(all.length)]);
+  // Fisher–Yates shuffle so guaranteed chars aren't always first.
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = rand(i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join("");
+}
+
+/* =====================================================================
+   UI WIRING — everything below touches the DOM. Kept separate from the
+   logic above so the logic stays testable (see test/ in README).
+   ===================================================================== */
+if (typeof document !== "undefined") {
+  document.addEventListener("DOMContentLoaded", () => {
+    let policy = { ...PRESETS.standard };
+    let activePreset = "standard";
+
+    const $ = id => document.getElementById(id);
+    const pwInput = $("pw"), meterFill = $("meterFill"), meterLabel = $("meterLabel"),
+          verdict = $("verdict"), ruleList = $("ruleList"),
+          entropyOut = $("entropyOut"), crackSlow = $("crackSlow"), crackFast = $("crackFast");
+
+    // ---- policy checkboxes ----
+    const grid = $("policyGrid");
+    function renderPolicy() {
+      grid.innerHTML = "";
+      ["minLength", "requireLower", "requireUpper", "requireDigit",
+       "requireSymbol", "banCommon", "banPatterns"].forEach(key => {
+        const label = document.createElement("label");
+        label.className = "checkbox";
+        const box = document.createElement("input");
+        box.type = "checkbox";
+        box.checked = key === "minLength" ? true : policy[key];
+        box.disabled = key === "minLength"; // length is set by presets, shown for clarity
+        box.addEventListener("change", () => {
+          policy[key] = box.checked;
+          activePreset = "custom";
+          document.querySelectorAll("[data-preset]").forEach(b => b.classList.remove("active"));
+          update();
+        });
+        label.append(box, document.createTextNode(" " + POLICY_LABELS[key](policy)));
+        grid.append(label);
+      });
+    }
+    document.querySelectorAll("[data-preset]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("[data-preset]").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        activePreset = btn.dataset.preset;
+        policy = { ...PRESETS[activePreset] };
+        renderPolicy();
+        update();
+      });
+    });
+
+    // ---- checker ----
+    function update() {
+      const pw = pwInput.value;
+      const g = gradePassword(pw, policy);
+      const color = g.label === "Excellent" ? "var(--green)"
+                  : g.label === "Strong"    ? "#a3e635"
+                  : g.label === "Fair"      ? "var(--amber)" : "var(--red)";
+      meterFill.style.width = (pw ? g.score : 0) + "%";
+      meterFill.style.background = color;
+      meterLabel.textContent = pw ? `${g.label} — ${g.score}/100` : "—";
+      meterLabel.style.color = pw ? color : "var(--muted)";
+      entropyOut.textContent = pw ? `~${g.entropyBits.toFixed(0)} bits` : "—";
+      crackSlow.textContent = pw ? humanDuration(g.crackSlowSec) : "—";
+      crackFast.textContent = pw ? humanDuration(g.crackFastSec) : "—";
+      verdict.innerHTML = pw
+        ? (g.passed
+            ? `<strong>✅ Passes the ${activePreset} policy.</strong> Solid choice — store it in a password manager, not your head.`
+            : `<strong>❌ Fails the ${activePreset} policy.</strong> Fix the red items below.`)
+        : "";
+      ruleList.innerHTML = "";
+      g.rules.forEach(r => {
+        const li = document.createElement("li");
+        li.innerHTML = `<span class="${r.ok ? "pass" : "fail"}">${r.ok ? "✔" : "✘"}</span> ${r.label}` +
+          (r.fix ? `<div class="fix">→ ${r.fix}</div>` : "");
+        ruleList.append(li);
+      });
+    }
+    pwInput.addEventListener("input", update);
+    $("toggleVis").addEventListener("click", e => {
+      const show = pwInput.type === "password";
+      pwInput.type = show ? "text" : "password";
+      e.target.textContent = show ? "Hide" : "Show";
+    });
+
+    // ---- generator ----
+    $("genLen").addEventListener("input", e => { $("lenOut").textContent = e.target.value; });
+    $("genBtn").addEventListener("click", () => {
+      const opts = {
+        lower: $("genLower").checked, upper: $("genUpper").checked,
+        digit: $("genDigit").checked, symbol: $("genSymbol").checked,
+        noAmbig: $("genNoAmbig").checked
+      };
+      try {
+        const gen = generatePassword(parseInt($("genLen").value, 10), opts);
+        $("genOut").textContent = gen;
+        const g = gradePassword(gen, policy);
+        $("genVerdict").innerHTML =
+          `<strong class="${g.passed ? "pass" : "fail"}">${g.passed ? "✅" : "⚠️"}</strong> ` +
+          `Entropy ~${g.entropyBits.toFixed(0)} bits — ${g.passed ? "passes" : "does not pass"} the current policy.`;
+      } catch (err) {
+        $("genOut").textContent = "Error: " + err.message;
+        $("genVerdict").textContent = "";
+      }
+    });
+    $("copyBtn").addEventListener("click", async () => {
+      const text = $("genOut").textContent;
+      if (!text || text === "—" || text.startsWith("Error")) return;
+      try { await navigator.clipboard.writeText(text); $("copyBtn").textContent = "Copied!"; }
+      catch { $("copyBtn").textContent = "Copy failed"; }
+      setTimeout(() => { $("copyBtn").textContent = "Copy"; }, 1500);
+    });
+
+    renderPolicy();
+    update();
+  });
+}
+</script>
+</body>
+</html>
