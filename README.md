@@ -10,3 +10,4 @@ single day, with its own README, source, and usage instructions.
 | [03](day-03-ticket-tracker) | Mini Helpdesk | IT support ticket tracker with SLA highlighting, audit trail, CSV/JSON export (single-file web app) |
 | [04](day-04-link-checker) | QA Link Checker | CLI that checks URL lists for broken links, follows redirects, times responses, writes JSON/CSV reports (Node.js stdlib only) |
 | [05](day-05-password-checker) | Password Strength Checker & Policy Auditor | Grades passwords against corporate password policies, estimates entropy/crack time, generates secure passwords (single-file web app) |
+| [06](day-06-backup-helper) | Backup Buddy | Timestamped ZIP backups with rotation, SHA-256 integrity verification, dry-run and exclude patterns (Python CLI, stdlib only) |
