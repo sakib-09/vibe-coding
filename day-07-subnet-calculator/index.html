@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Subnet Calculator &amp; IP Toolkit</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --card: #1e293b;
+    --card-border: #334155;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #22d3ee;
+    --accent-dim: #0e7490;
+    --net-bit: #4ade80;   /* network portion of address */
+    --host-bit: #fbbf24;  /* host portion of address */
+    --danger: #f87171;
+    --ok: #4ade80;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.55;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 24px 16px 64px; }
+  header h1 { margin: 0 0 4px; font-size: 1.7rem; }
+  header p { margin: 0 0 20px; color: var(--muted); }
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .tabs button {
+    background: var(--card); color: var(--text);
+    border: 1px solid var(--card-border); border-radius: var(--radius);
+    padding: 10px 16px; font-size: 0.95rem; cursor: pointer;
+  }
+  .tabs button.active { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .panel {
+    display: none; background: var(--card);
+    border: 1px solid var(--card-border); border-radius: var(--radius);
+    padding: 20px;
+  }
+  .panel.active { display: block; }
+  .panel h2 { margin-top: 0; font-size: 1.2rem; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; align-items: flex-end; }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; color: var(--muted); }
+  input[type="text"], input[type="number"] {
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--card-border); border-radius: 8px;
+    padding: 9px 12px; font-size: 1rem; font-family: ui-monospace, Consolas, monospace;
+    width: 100%;
+  }
+  input:focus { outline: 2px solid var(--accent-dim); border-color: var(--accent); }
+  .btn {
+    background: var(--accent); color: #06202a; border: none;
+    border-radius: 8px; padding: 10px 18px; font-size: 1rem;
+    font-weight: 700; cursor: pointer;
+  }
+  .btn:hover { filter: brightness(1.1); }
+  .error {
+    display: none; background: rgba(248, 113, 113, 0.12);
+    border: 1px solid var(--danger); color: var(--danger);
+    border-radius: 8px; padding: 10px 12px; margin: 12px 0; font-size: 0.92rem;
+  }
+  .error.show { display: block; }
+  table.results { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 0.95rem; }
+  table.results th, table.results td {
+    text-align: left; padding: 8px 10px;
+    border-bottom: 1px solid var(--card-border);
+  }
+  table.results th { color: var(--muted); font-weight: 600; width: 42%; }
+  table.results td { font-family: ui-monospace, Consolas, monospace; }
+  .note { color: var(--muted); font-size: 0.88rem; margin-top: 10px; }
+  .binbox {
+    font-family: ui-monospace, Consolas, monospace; font-size: 1.05rem;
+    background: var(--bg); border: 1px solid var(--card-border);
+    border-radius: 8px; padding: 12px; margin-top: 12px; overflow-x: auto;
+    white-space: nowrap; letter-spacing: 1px;
+  }
+  .binbox .lbl { color: var(--muted); font-size: 0.8rem; letter-spacing: 0; display: block; margin-bottom: 4px; font-family: system-ui, sans-serif; }
+  .net { color: var(--net-bit); }
+  .host { color: var(--host-bit); }
+  .legend { font-size: 0.82rem; color: var(--muted); margin-top: 6px; }
+  .bits { display: flex; gap: 6px; margin: 10px 0; flex-wrap: wrap; }
+  .bit {
+    width: 44px; height: 52px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--card-border); background: var(--bg);
+    color: var(--text); font-family: ui-monospace, monospace; font-size: 1.1rem;
+  }
+  .bit.on { background: var(--accent-dim); border-color: var(--accent); color: #fff; font-weight: 700; }
+  .bit .val { display: block; font-size: 0.65rem; color: var(--muted); }
+  .conv-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 560px) { .conv-row { grid-template-columns: 1fr; } }
+  footer { margin-top: 28px; color: var(--muted); font-size: 0.85rem; }
+  kbd { background: var(--bg); border: 1px solid var(--card-border); border-radius: 4px; padding: 1px 6px; font-family: ui-monospace, monospace; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🧮 Subnet Calculator &amp; IP Toolkit</h1>
+    <p>Subnet math, subnet planning, and binary conversion — the bread and butter of
+       networking interviews and day-to-day IT support work.</p>
+  </header>
+
+  <nav class="tabs">
+    <button class="active" data-tab="calc">Subnet Calculator</button>
+    <button data-tab="planner">Subnet Planner</button>
+    <button data-tab="binary">Binary Converter</button>
+  </nav>
+
+  <!-- ============ TAB 1: SUBNET CALCULATOR ============ -->
+  <section class="panel active" id="panel-calc">
+    <h2>Subnet Calculator</h2>
+    <p class="note" style="margin-top:0">Enter an IPv4 address and a CIDR prefix length
+      (e.g. <kbd>192.168.1.10</kbd> / <kbd>24</kbd>) to see the full subnet breakdown.</p>
+    <div class="row">
+      <label style="flex:2;min-width:200px">IP address
+        <input type="text" id="calc-ip" value="192.168.1.10" placeholder="192.168.1.10" spellcheck="false">
+      </label>
+      <label style="flex:1;min-width:110px">CIDR prefix
+        <input type="number" id="calc-cidr" value="24" min="0" max="32">
+      </label>
+      <button class="btn" id="calc-go">Calculate</button>
+    </div>
+    <div class="error" id="calc-error"></div>
+    <div id="calc-out"></div>
+  </section>
+
+  <!-- ============ TAB 2: SUBNET PLANNER ============ -->
+  <section class="panel" id="panel-planner">
+    <h2>Subnet Planner (VLSM-style splitting)</h2>
+    <p class="note" style="margin-top:0">Got one big network and need to carve it into
+      smaller equal subnets? Enter the parent network and how many subnets you need.</p>
+    <div class="row">
+      <label style="flex:2;min-width:180px">Network address
+        <input type="text" id="plan-net" value="192.168.10.0" placeholder="192.168.10.0" spellcheck="false">
+      </label>
+      <label style="flex:1;min-width:100px">CIDR
+        <input type="number" id="plan-cidr" value="24" min="0" max="30">
+      </label>
+      <label style="flex:1;min-width:120px">Subnets needed
+        <input type="number" id="plan-count" value="4" min="1" max="1024">
+      </label>
+      <button class="btn" id="plan-go">Plan</button>
+    </div>
+    <div class="error" id="plan-error"></div>
+    <div id="plan-out"></div>
+  </section>
+
+  <!-- ============ TAB 3: BINARY CONVERTER ============ -->
+  <section class="panel" id="panel-binary">
+    <h2>Binary Converter</h2>
+    <p class="note" style="margin-top:0">Click the bits to toggle them, or type a value.
+      Everything stays in sync — a handy way to build intuition for masks like
+      <kbd>255.255.255.0</kbd> = <kbd>/24</kbd>.</p>
+    <div class="bits" id="bit-row"></div>
+    <div class="conv-row">
+      <label>Decimal (0–255)
+        <input type="number" id="bin-dec" value="192" min="0" max="255">
+      </label>
+      <label>Binary (8 bits)
+        <input type="text" id="bin-bin" value="11000000" maxlength="8" spellcheck="false">
+      </label>
+    </div>
+    <h2 style="margin-top:24px">Full IP → binary</h2>
+    <div class="row">
+      <label style="flex:2;min-width:200px">IP address
+        <input type="text" id="full-ip" value="192.168.1.1" spellcheck="false">
+      </label>
+      <button class="btn" id="full-go">Expand</button>
+    </div>
+    <div class="error" id="full-error"></div>
+    <div id="full-out"></div>
+  </section>
+
+  <footer>
+    100% client-side — no data leaves your browser. Subnetting is one of the most
+    common hands-on topics in networking interviews, so try changing the CIDR and
+    watch how the network/host split moves.
+  </footer>
+</div>
+
+<script>
+/* =====================================================================
+   PURE LOGIC — no DOM access here, so this whole block can be
+   unit-tested in Node (see test.js). All functions throw Error with a
+   human-readable message on invalid input.
+   ===================================================================== */
+
+/** Parse a dotted-quad IPv4 string -> [a, b, c, d]. Throws on invalid input. */
+function parseIPv4(str) {
+  if (typeof str !== "string") throw new Error("IP address must be text.");
+  const parts = str.trim().split(".");
+  if (parts.length !== 4) throw new Error(`"${str.trim()}" is not a valid IPv4 address (need 4 octets).`);
+  const octets = parts.map((p) => {
+    if (!/^\d+$/.test(p)) throw new Error(`Octet "${p}" is not a number.`);
+    if (p.length > 1 && p.startsWith("0")) throw new Error(`Octet "${p}" has a leading zero.`);
+    const n = Number(p);
+    if (n < 0 || n > 255) throw new Error(`Octet ${n} is out of range (0-255).`);
+    return n;
+  });
+  return octets;
+}
+
+/** [a,b,c,d] -> unsigned 32-bit integer. */
+function ipToInt(octets) {
+  return ((octets[0] * 256 + octets[1]) * 256 + octets[2]) * 256 + octets[3];
+}
+
+/** Unsigned 32-bit integer -> "a.b.c.d". */
+function intToIpv4(n) {
+  n = n >>> 0;
+  return [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255].join(".");
+}
+
+/** Validate a CIDR prefix length (0-32 integer). */
+function validCidr(cidr) {
+  const n = Number(cidr);
+  if (!Number.isInteger(n) || n < 0 || n > 32)
+    throw new Error(`CIDR prefix must be a whole number from 0 to 32 (got "${cidr}").`);
+  return n;
+}
+
+/** CIDR prefix -> subnet mask as unsigned 32-bit int. */
+function cidrToMaskInt(cidr) {
+  cidr = validCidr(cidr);
+  if (cidr === 0) return 0;
+  return (0xFFFFFFFF << (32 - cidr)) >>> 0;
+}
+
+/**
+ * Subnet mask (uint32) -> CIDR prefix, or null when the mask is not a
+ * valid contiguous mask (e.g. 255.0.255.0).
+ */
+function maskIntToCidr(mask) {
+  mask = mask >>> 0;
+  let cidr = 0;
+  let seenZero = false;
+  for (let i = 31; i >= 0; i--) {
+    const bit = (mask >>> i) & 1;
+    if (bit === 1) {
+      if (seenZero) return null; // 1 after a 0 -> not contiguous
+      cidr++;
+    } else {
+      seenZero = true;
+    }
+  }
+  return cidr;
+}
+
+/** Classful address class from the first octet. */
+function ipClass(firstOctet) {
+  if (firstOctet >= 1 && firstOctet <= 126) return "A";
+  if (firstOctet === 127) return "A (loopback range)";
+  if (firstOctet >= 128 && firstOctet <= 191) return "B";
+  if (firstOctet >= 192 && firstOctet <= 223) return "C";
+  if (firstOctet >= 224 && firstOctet <= 239) return "D (multicast)";
+  if (firstOctet >= 240 && firstOctet <= 254) return "E (experimental)";
+  return "—";
+}
+
+/** Practical address type: private / loopback / link-local / multicast / public. */
+function ipType(octets) {
+  const [a, b] = octets;
+  if (a === 127) return "Loopback";
+  if (a === 10) return "Private (RFC 1918)";
+  if (a === 172 && b >= 16 && b <= 31) return "Private (RFC 1918)";
+  if (a === 192 && b === 168) return "Private (RFC 1918)";
+  if (a === 169 && b === 254) return "Link-local (APIPA)";
+  if (a >= 224 && a <= 239) return "Multicast";
+  if (a >= 240) return "Reserved / experimental";
+  if (a === 0) return "This network (RFC 1122)";
+  return "Public (globally routable)";
+}
+
+/** 8-bit binary string, zero-padded: 5 -> "00000101". */
+function decToBin8(n) {
+  n = Number(n);
+  if (!Number.isInteger(n) || n < 0 || n > 255)
+    throw new Error(`Value must be a whole number from 0 to 255 (got "${n}").`);
+  return n.toString(2).padStart(8, "0");
+}
+
+/** 8-char binary string -> decimal. Throws on invalid input. */
+function binToDec8(s) {
+  if (typeof s !== "string" || !/^[01]{8}$/.test(s.trim()))
+    throw new Error(`"${s}" is not 8 binary digits (0/1).`);
+  return parseInt(s.trim(), 2);
+}
+
+/** uint32 -> "xxxxxxxx.xxxxxxxx.xxxxxxxx.xxxxxxxx" grouped binary string. */
+function toBinary32(n) {
+  n = n >>> 0;
+  const bits = n.toString(2).padStart(32, "0");
+  return [bits.slice(0, 8), bits.slice(8, 16), bits.slice(16, 24), bits.slice(24, 32)].join(".");
+}
+
+/**
+ * Full subnet breakdown for an IP + CIDR.
+ * Returns { ip, cidr, mask, wildcard, network, broadcast, firstUsable,
+ *           lastUsable, totalHosts, usableHosts, className, typeName,
+ *           ipInt, maskInt, note }.
+ */
+function subnetInfo(ipStr, cidr) {
+  const octets = parseIPv4(ipStr);
+  cidr = validCidr(cidr);
+  const ipInt = ipToInt(octets);
+  const maskInt = cidrToMaskInt(cidr);
+  const networkInt = (ipInt & maskInt) >>> 0;
+  const wildcardInt = (~maskInt) >>> 0;
+  const broadcastInt = (networkInt | wildcardInt) >>> 0;
+  const hostBits = 32 - cidr;
+  const totalHosts = Math.pow(2, hostBits);
+
+  let firstUsable, lastUsable, usableHosts, note = "";
+  if (cidr === 32) {
+    // Single host route: the address itself is the only address.
+    firstUsable = lastUsable = intToIpv4(ipInt);
+    usableHosts = 1;
+    note = "A /32 is a single host address — there is no separate network or broadcast address.";
+  } else if (cidr === 31) {
+    // RFC 3021 point-to-point links: both addresses are usable, no broadcast.
+    firstUsable = intToIpv4(networkInt);
+    lastUsable = intToIpv4(broadcastInt);
+    usableHosts = 2;
+    note = "A /31 is a point-to-point link (RFC 3021): both addresses are usable and there is no broadcast address.";
+  } else {
+    firstUsable = intToIpv4(networkInt + 1);
+    lastUsable = intToIpv4(broadcastInt - 1);
+    usableHosts = totalHosts - 2;
+    note = "The network address (all host bits 0) and broadcast address (all host bits 1) cannot be assigned to hosts.";
+  }
+
+  return {
+    ip: intToIpv4(ipInt),
+    cidr,
+    mask: intToIpv4(maskInt),
+    wildcard: intToIpv4(wildcardInt),
+    network: intToIpv4(networkInt),
+    broadcast: intToIpv4(broadcastInt),
+    firstUsable,
+    lastUsable,
+    totalHosts,
+    usableHosts,
+    className: ipClass(octets[0]),
+    typeName: ipType(octets),
+    ipInt,
+    maskInt,
+    note,
+  };
+}
+
+/**
+ * Split a parent network into `count` equal subnets (VLSM-style).
+ * Returns { newCidr, totalSubnets, subnets: [{ network, broadcast, first, last, usableHosts }] }.
+ */
+function planSubnets(networkStr, cidr, count) {
+  const octets = parseIPv4(networkStr);
+  cidr = validCidr(cidr);
+  count = Number(count);
+  if (!Number.isInteger(count) || count < 1)
+    throw new Error(`Subnets needed must be a whole number of at least 1 (got "${count}").`);
+
+  const extraBits = Math.ceil(Math.log2(count)); // bits to borrow
+  const newCidr = cidr + extraBits;
+  if (newCidr > 30)
+    throw new Error(
+      `Need ${extraBits} more bit(s) for ${count} subnet(s), which would make /${newCidr} — ` +
+      `each subnet would have fewer than 2 usable hosts. Use a larger parent network or fewer subnets.`
+    );
+
+  const totalSubnets = Math.pow(2, extraBits);
+  const parentInt = (ipToInt(octets) & cidrToMaskInt(cidr)) >>> 0; // normalize to network address
+  const subnetSize = Math.pow(2, 32 - newCidr);
+  const subnets = [];
+  for (let i = 0; i < totalSubnets; i++) {
+    const net = (parentInt + i * subnetSize) >>> 0;
+    const bcast = (net + subnetSize - 1) >>> 0;
+    subnets.push({
+      network: intToIpv4(net),
+      broadcast: intToIpv4(bcast),
+      first: intToIpv4(net + 1),
+      last: intToIpv4(bcast - 1),
+      usableHosts: subnetSize - 2,
+      cidr: newCidr,
+    });
+  }
+  return {
+    newCidr,
+    totalSubnets,
+    requested: count,
+    parent: intToIpv4(parentInt) + "/" + cidr,
+    subnets,
+  };
+}
+
+/** Expand an IP string to its 32-bit grouped binary form. */
+function expandIpBinary(ipStr) {
+  const octets = parseIPv4(ipStr);
+  return toBinary32(ipToInt(octets));
+}
+
+/* =====================================================================
+   DOM WIRING — skipped when there is no document (Node test run).
+   ===================================================================== */
+if (typeof document !== "undefined") {
+  // ---- tab switching ----
+  document.querySelectorAll(".tabs button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tabs button").forEach((b) => b.classList.remove("active"));
+      document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
+      btn.classList.add("active");
+      document.getElementById("panel-" + btn.dataset.tab).classList.add("active");
+    });
+  });
+
+  function showError(id, msg) {
+    const el = document.getElementById(id);
+    el.textContent = msg;
+    el.classList.add("show");
+  }
+  function clearError(id) {
+    document.getElementById(id).classList.remove("show");
+  }
+
+  /** Binary view with network bits green, host bits amber. */
+  function binaryHtml(ipInt, cidr) {
+    const bits = (ipInt >>> 0).toString(2).padStart(32, "0");
+    let html = "";
+    for (let i = 0; i < 32; i++) {
+      if (i > 0 && i % 8 === 0) html += ".";
+      const cls = i < cidr ? "net" : "host";
+      html += `<span class="${cls}">${bits[i]}</span>`;
+    }
+    return html;
+  }
+
+  // ---- Tab 1: calculator ----
+  document.getElementById("calc-go").addEventListener("click", () => {
+    clearError("calc-error");
+    const out = document.getElementById("calc-out");
+    try {
+      const info = subnetInfo(
+        document.getElementById("calc-ip").value,
+        document.getElementById("calc-cidr").value
+      );
+      out.innerHTML = `
+        <table class="results">
+          <tr><th>IP address</th><td>${info.ip}</td></tr>
+          <tr><th>Subnet mask</th><td>${info.mask} &nbsp;(/ ${info.cidr})</td></tr>
+          <tr><th>Wildcard mask</th><td>${info.wildcard}</td></tr>
+          <tr><th>Network address</th><td>${info.network}</td></tr>
+          <tr><th>Broadcast address</th><td>${info.broadcast}</td></tr>
+          <tr><th>First usable host</th><td>${info.firstUsable}</td></tr>
+          <tr><th>Last usable host</th><td>${info.lastUsable}</td></tr>
+          <tr><th>Total addresses</th><td>${info.totalHosts.toLocaleString()}</td></tr>
+          <tr><th>Usable hosts</th><td>${info.usableHosts.toLocaleString()}</td></tr>
+          <tr><th>Address class</th><td>${info.className}</td></tr>
+          <tr><th>Address type</th><td>${info.typeName}</td></tr>
+        </table>
+        <div class="binbox">
+          <span class="lbl">IP in binary — green bits are the network, amber bits are hosts</span>
+          ${binaryHtml(info.ipInt, info.cidr)}
+        </div>
+        <div class="binbox">
+          <span class="lbl">Subnet mask in binary</span>
+          ${toBinary32(info.maskInt)}
+        </div>
+        <p class="note">${info.note}</p>`;
+    } catch (e) {
+      out.innerHTML = "";
+      showError("calc-error", e.message);
+    }
+  });
+
+  // ---- Tab 2: planner ----
+  document.getElementById("plan-go").addEventListener("click", () => {
+    clearError("plan-error");
+    const out = document.getElementById("plan-out");
+    try {
+      const plan = planSubnets(
+        document.getElementById("plan-net").value,
+        document.getElementById("plan-cidr").value,
+        document.getElementById("plan-count").value
+      );
+      const rows = plan.subnets
+        .map(
+          (s, i) => `<tr>
+            <td>#${i + 1}</td><td>${s.network}/${s.cidr}</td>
+            <td>${s.first} – ${s.last}</td><td>${s.broadcast}</td>
+            <td>${s.usableHosts.toLocaleString()}</td></tr>`
+        )
+        .join("");
+      out.innerHTML = `
+        <p class="note">Splitting <strong>${plan.parent}</strong> into
+        <strong>${plan.totalSubnets}</strong> × <strong>/${plan.newCidr}</strong> subnets
+        ${plan.totalSubnets > plan.requested
+          ? `(you asked for ${plan.requested} — subnets always come in powers of two, so you get ${plan.totalSubnets})`
+          : "(exactly what you asked for)"}.</p>
+        <table class="results">
+          <tr><th>#</th><th>Network</th><th>Usable range</th><th>Broadcast</th><th>Usable hosts</th></tr>
+          ${rows}
+        </table>`;
+    } catch (e) {
+      out.innerHTML = "";
+      showError("plan-error", e.message);
+    }
+  });
+
+  // ---- Tab 3: binary converter ----
+  const bitRow = document.getElementById("bit-row");
+  const bitBtns = [];
+  for (let i = 7; i >= 0; i--) {
+    const b = document.createElement("button");
+    b.className = "bit";
+    b.innerHTML = `<span class="val">${Math.pow(2, i)}</span>0`;
+    b.dataset.pos = i;
+    b.addEventListener("click", () => {
+      const dec = document.getElementById("bin-dec");
+      dec.value = Number(dec.value || 0) ^ Math.pow(2, i); // toggle that bit
+      syncFromDec();
+    });
+    bitRow.appendChild(b);
+    bitBtns.push(b);
+  }
+  function paintBits(n) {
+    bitBtns.forEach((b) => {
+      const on = (n & Math.pow(2, Number(b.dataset.pos))) !== 0;
+      b.classList.toggle("on", on);
+      b.innerHTML = `<span class="val">${Math.pow(2, Number(b.dataset.pos))}</span>${on ? 1 : 0}`;
+    });
+  }
+  function syncFromDec() {
+    try {
+      const n = Number(document.getElementById("bin-dec").value);
+      document.getElementById("bin-bin").value = decToBin8(n);
+      paintBits(n);
+    } catch (e) { /* typing in progress — ignore */ }
+  }
+  document.getElementById("bin-dec").addEventListener("input", syncFromDec);
+  document.getElementById("bin-bin").addEventListener("input", () => {
+    try {
+      const n = binToDec8(document.getElementById("bin-bin").value);
+      document.getElementById("bin-dec").value = n;
+      paintBits(n);
+    } catch (e) { /* typing in progress — ignore */ }
+  });
+  syncFromDec();
+
+  document.getElementById("full-go").addEventListener("click", () => {
+    clearError("full-error");
+    const out = document.getElementById("full-out");
+    try {
+      const ip = document.getElementById("full-ip").value;
+      out.innerHTML = `<div class="binbox">
+        <span class="lbl">${parseIPv4(ip).join(".")} in binary</span>
+        ${expandIpBinary(ip)}</div>`;
+    } catch (e) {
+      out.innerHTML = "";
+      showError("full-error", e.message);
+    }
+  });
+}
+</script>
+</body>
+</html>
