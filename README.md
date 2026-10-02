@@ -13,3 +13,4 @@ single day, with its own README, source, and usage instructions.
 | [06](day-06-backup-helper) | Backup Buddy | Timestamped ZIP backups with rotation, SHA-256 integrity verification, dry-run and exclude patterns (Python CLI, stdlib only) |
 | [07](day-07-subnet-calculator) | Subnet Calculator & IP Toolkit | Subnet math, subnet planner, and binary converter for IPv4 networking (single-file web app) |
 | [08](day-08-dns-checker) | DNS Health Checker | CLI that audits a domain's DNS records (MX, SPF, DMARC, NS, PTR, wildcard) and flags support-relevant issues, with JSON/CSV reports (Node.js stdlib only) |
+| [09](day-09-json-log-viewer) | JSON Log Viewer | Paste minified JSON / NDJSON logs and get a readable, filterable log view: level detection (strings, pino, syslog), timestamp normalisation, expandable JSON tree, live search, copy/download (single-file web app) |
