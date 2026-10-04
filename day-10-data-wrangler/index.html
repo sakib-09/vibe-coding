@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Data Wrangler — CSV ⇄ JSON Converter &amp; Table Viewer</title>
+<style>
+  :root{
+    --bg:#0f172a; --panel:#1e293b; --panel2:#243349;
+    --border:#334155; --text:#e2e8f0; --muted:#94a3b8;
+    --accent:#38bdf8; --accent2:#22c55e; --warn:#f59e0b; --bad:#ef4444;
+    --mono:"Cascadia Code","Fira Code",Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;padding:24px}
+  .wrap{max-width:1180px;margin:0 auto}
+  h1{font-size:1.6rem;margin:0 0 4px}
+  .sub{color:var(--muted);margin:0 0 18px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+  @media(max-width:900px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px}
+  .card h2{font-size:1.05rem;margin:0 0 10px}
+  label.row{display:flex;align-items:center;gap:8px;font-size:.9rem;color:var(--muted);margin-bottom:6px}
+  textarea{width:100%;min-height:220px;background:#0b1220;color:var(--text);border:1px solid var(--border);
+    border-radius:8px;padding:10px;font-family:var(--mono);font-size:.82rem;resize:vertical}
+  .btn{background:var(--accent);color:#06202e;border:none;border-radius:8px;padding:9px 14px;
+    font-weight:600;cursor:pointer;font-size:.9rem}
+  .btn:hover{filter:brightness(1.1)}
+  .btn.ghost{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+  .btn.green{background:var(--accent2);color:#052e12}
+  .btnrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  select,input[type=text]{background:#0b1220;color:var(--text);border:1px solid var(--border);
+    border-radius:8px;padding:8px;font-size:.85rem}
+  .stats{display:flex;gap:18px;flex-wrap:wrap;background:var(--panel2);border:1px solid var(--border);
+    border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:.9rem}
+  .stats b{color:var(--accent)}
+  .badge{display:inline-block;padding:2px 10px;border-radius:999px;font-size:.78rem;font-weight:600}
+  .badge.csv{background:#134e4a;color:#5eead4}
+  .badge.json{background:#3b2f63;color:#c4b5fd}
+  .badge.ndjson{background:#4a2c12;color:#fcd34d}
+  .badge.err{background:#4c1d1d;color:#fca5a5}
+  .tabs{display:flex;gap:6px;margin-bottom:10px}
+  .tab{background:transparent;border:1px solid var(--border);color:var(--muted);border-radius:8px;
+    padding:7px 14px;cursor:pointer;font-size:.88rem}
+  .tab.active{background:var(--panel2);color:var(--text);border-color:var(--accent)}
+  .tablewrap{overflow:auto;max-height:380px;border:1px solid var(--border);border-radius:8px}
+  table{border-collapse:collapse;width:100%;font-size:.82rem;font-family:var(--mono)}
+  th,td{border:1px solid var(--border);padding:6px 10px;text-align:left;white-space:nowrap;max-width:260px;
+    overflow:hidden;text-overflow:ellipsis}
+  th{background:var(--panel2);cursor:pointer;position:sticky;top:0;user-select:none}
+  th:hover{color:var(--accent)}
+  tr:nth-child(even) td{background:#16213a}
+  .null{color:var(--muted);font-style:italic}
+  pre.out{background:#0b1220;border:1px solid var(--border);border-radius:8px;padding:12px;
+    font-family:var(--mono);font-size:.8rem;max-height:380px;overflow:auto;white-space:pre-wrap;word-break:break-word}
+  .err{color:var(--bad);background:#2a1215;border:1px solid #7f1d1d;border-radius:8px;padding:10px;margin-top:10px;font-size:.88rem}
+  .hint{color:var(--muted);font-size:.85rem;margin-top:8px}
+  .search{margin-bottom:10px;width:100%}
+  footer{color:var(--muted);font-size:.8rem;margin-top:22px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🔄 Data Wrangler</h1>
+  <p class="sub">CSV ⇄ JSON converter with a sortable table preview. 100% client-side — paste data or drop a file, nothing leaves your browser.</p>
+
+  <div class="grid">
+    <div class="card">
+      <h2>1 · Input data</h2>
+      <label class="row">
+        Format:
+        <select id="direction">
+          <option value="auto">Auto-detect</option>
+          <option value="csv2json">CSV → JSON</option>
+          <option value="json2csv">JSON → CSV</option>
+        </select>
+        <span id="detected"></span>
+      </label>
+      <label class="row">
+        Delimiter:
+        <select id="delimiter">
+          <option value="auto">Auto-detect</option>
+          <option value=",">Comma (,)</option>
+          <option value=";">Semicolon (;)</option>
+          <option value="tab">Tab</option>
+          <option value="|">Pipe (|)</option>
+        </select>
+      </label>
+      <textarea id="input" placeholder='Paste CSV or JSON here…&#10;&#10;CSV:&#10;name,ticket,status&#10;"Lindqvist, M",1042,open&#10;&#10;JSON:&#10;[{"name":"Moe","ticket":1042,"status":"open"}]'></textarea>
+      <div class="btnrow">
+        <button class="btn" id="convert">Convert →</button>
+        <button class="btn ghost" id="sample">Load sample</button>
+        <label class="btn ghost" style="cursor:pointer">Open file…
+          <input type="file" id="file" accept=".csv,.tsv,.txt,.json,.ndjson,.log" hidden>
+        </label>
+      </div>
+      <p class="hint">Support work constantly means converting between CSV exports and JSON: vendor
+      reports come as CSV, APIs speak JSON, spreadsheets need re-imports. This tool does the round-trip
+      instantly, with quoted fields, embedded newlines, and multi-line JSON handled.</p>
+    </div>
+
+    <div class="card">
+      <h2>2 · Output</h2>
+      <div class="tabs">
+        <button class="tab active" data-tab="table">Table</button>
+        <button class="tab" data-tab="json">JSON</button>
+        <button class="tab" data-tab="csv">CSV</button>
+      </div>
+      <input type="text" class="search" id="search" placeholder="🔍 Filter rows…" disabled>
+      <div class="stats" id="stats" hidden></div>
+      <div id="outTable" class="tablewrap"><div style="padding:14px;color:var(--muted)">Convert something to see it here.</div></div>
+      <pre class="out" id="outJson" hidden></pre>
+      <pre class="out" id="outCsv" hidden></pre>
+      <div class="btnrow">
+        <button class="btn green" id="copyBtn" disabled>Copy output</button>
+        <button class="btn ghost" id="dlJson" disabled>Download .json</button>
+        <button class="btn ghost" id="dlCsv" disabled>Download .csv</button>
+      </div>
+      <div id="error"></div>
+    </div>
+  </div>
+
+  <footer>Tip: click a column header to sort. Click again to reverse.</footer>
+</div>
+
+<script id="logic">
+/* ============================================================
+   Pure data logic — no DOM access. Node test harness evaluates
+   this whole block, so keep everything below UI-agnostic.
+   ============================================================ */
+
+/** Candidates for delimiter auto-detection (tab handled as "\t"). */
+const DELIMS = [",", ";", "\t", "|"];
+
+/**
+ * Parse a CSV string into { headers, rows }.
+ * Handles RFC-4180 style quoting: "a ""quoted"" value", and newlines
+ * inside quoted fields. Rows: array of arrays of strings.
+ */
+function parseCSV(text, delim) {
+  const rows = [];
+  let row = [], field = "", inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; } // escaped quote
+        else inQuotes = false;                          // closing quote
+      } else field += c;
+    } else if (c === '"') {
+      inQuotes = true;
+    } else if (c === delim) {
+      row.push(field); field = "";
+    } else if (c === "\r") {
+      // ignore; \n handles the line break
+    } else if (c === "\n") {
+      row.push(field); rows.push(row); row = []; field = "";
+    } else field += c;
+  }
+  // last line may have no trailing newline
+  if (field !== "" || row.length) { row.push(field); rows.push(row); }
+  // drop fully-empty trailing lines (e.g. a final newline edge case)
+  const clean = rows.filter(r => !(r.length === 1 && r[0] === ""));
+  const headers = clean.length ? clean[0] : [];
+  const data = clean.slice(1).map(r =>
+    headers.map((_, i) => (i < r.length ? r[i] : ""))
+  );
+  return { headers, rows: data };
+}
+
+/**
+ * Pick the delimiter that produces the most consistent column count
+ * across the first few non-empty lines.
+ */
+function detectDelimiter(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim()).slice(0, 5);
+  if (!lines.length) return ",";
+  let best = ",", bestScore = -1;
+  for (const d of DELIMS) {
+    const counts = lines.map(l => parseCSV(l + "\n", d).headers.length);
+    const min = Math.min(...counts), max = Math.max(...counts);
+    const avg = counts.reduce((a, b) => a + b, 0) / counts.length;
+    // prefer delimiters that give >1 column and consistent widths
+    const score = avg > 1 && min === max ? avg * 10 + 5 : avg;
+    if (score > bestScore) { bestScore = score; best = d; }
+  }
+  return best;
+}
+
+/** Convert parsed CSV to an array of objects (or col-indexed if no header row). */
+function csvToJson(parsed, hasHeader) {
+  if (!hasHeader) {
+    return parsed.rows.map(r => {
+      const o = {};
+      r.forEach((v, i) => { o["col" + (i + 1)] = v; });
+      return o;
+    });
+  }
+  return parsed.rows.map(r => {
+    const o = {};
+    parsed.headers.forEach((h, i) => { o[h || ("col" + (i + 1))] = r[i] ?? ""; });
+    return o;
+  });
+}
+
+/**
+ * Detect JSON shape:
+ *  - "array":  [...]  (array of objects or values)
+ *  - "object": {...}  (single record)
+ *  - "ndjson": newline-delimited JSON (one object per line)
+ *  - "invalid": parse failed
+ */
+function detectJsonShape(text) {
+  const t = text.trim();
+  if (!t) return { kind: "invalid", error: "Empty input." };
+  try {
+    const v = JSON.parse(t);
+    return { kind: Array.isArray(v) ? "array" : "object", value: v };
+  } catch (e1) {
+    // try NDJSON: every non-empty line parses on its own
+    const lines = t.split(/\r?\n/).filter(l => l.trim());
+    if (lines.length > 1) {
+      try {
+        const value = lines.map(l => JSON.parse(l));
+        return { kind: "ndjson", value };
+      } catch (e2) { /* fall through */ }
+    }
+    return { kind: "invalid", error: "Not valid JSON: " + e1.message };
+  }
+}
+
+/** Is a cell value worth JSON-stringifying inside CSV? (nested object/array) */
+function isNested(v) {
+  return v !== null && typeof v === "object";
+}
+
+/** Convert JSON (array/object/ndjson) to { headers, rows } using the union of keys. */
+function jsonToCsv(value) {
+  const records = Array.isArray(value) ? value : [value];
+  const objs = records.map(r => (r !== null && typeof r === "object" && !Array.isArray(r))
+    ? r : { value: r });
+  const headers = [];
+  for (const o of objs) for (const k of Object.keys(o)) if (!headers.includes(k)) headers.push(k);
+  const rows = objs.map(o => headers.map(k => {
+    const v = o[k];
+    if (v === undefined || v === null) return "";
+    if (isNested(v)) return JSON.stringify(v);
+    return String(v);
+  }));
+  return { headers, rows };
+}
+
+/** Escape a single CSV cell (quote if it contains delim, quote, or newline). */
+function escapeCsvCell(v, delim) {
+  if (v.includes(delim) || v.includes('"') || v.includes("\n") || v.includes("\r"))
+    return '"' + v.replace(/"/g, '""') + '"';
+  return v;
+}
+
+/** Serialise { headers, rows } back to CSV text. */
+function toCsvText(headers, rows, delim) {
+  const line = cells => cells.map(c => escapeCsvCell(String(c), delim)).join(delim);
+  return [line(headers), ...rows.map(line)].join("\n");
+}
+
+/** Guess input kind: "json" if it parses, "csv" otherwise. */
+function detectInputKind(text) {
+  const shaped = detectJsonShape(text);
+  return shaped.kind === "invalid" ? "csv" : "json";
+}
+
+/** Escape HTML for safe table rendering. */
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+</script>
+
+<script>
+/* ============================================================
+   UI wiring — reads DOM, calls the pure logic above.
+   ============================================================ */
+const $ = id => document.getElementById(id);
+const state = { headers: [], rows: [], kind: null, jsonText: "", csvText: "", sortCol: -1, sortAsc: true };
+
+function showError(msg) {
+  $("error").innerHTML = msg ? '<div class="err">⚠️ ' + escHtml(msg) + "</div>" : "";
+}
+function setBadge(text, cls) {
+  $("detected").innerHTML = text ? `<span class="badge ${cls}">${escHtml(text)}</span>` : "";
+}
+
+function renderStats() {
+  const n = state.rows.length, m = state.headers.length;
+  const empty = state.rows.reduce((a, r) => a + r.filter(c => c === "").length, 0);
+  $("stats").hidden = false;
+  $("stats").innerHTML =
+    `Rows: <b>${n}</b> · Columns: <b>${m}</b> · Empty cells: <b>${empty}</b>`;
+}
+
+function filteredRows() {
+  const q = $("search").value.trim().toLowerCase();
+  let rows = state.rows.map((r, i) => [r, i]);
+  if (q) rows = rows.filter(([r]) => r.some(c => String(c).toLowerCase().includes(q)));
+  if (state.sortCol >= 0) {
+    const c = state.sortCol, asc = state.sortAsc;
+    rows.sort(([a], [b]) => {
+      const x = String(a[c]), y = String(b[c]);
+      const nx = parseFloat(x), ny = parseFloat(y);
+      const cmp = (!isNaN(nx) && !isNaN(ny)) ? nx - ny : x.localeCompare(y);
+      return asc ? cmp : -cmp;
+    });
+  }
+  return rows;
+}
+
+function renderTable() {
+  const el = $("outTable");
+  if (!state.rows.length) { el.innerHTML = '<div style="padding:14px;color:var(--muted)">No rows.</div>'; return; }
+  const max = 500;
+  const rows = filteredRows().slice(0, max);
+  let html = "<table><thead><tr>";
+  state.headers.forEach((h, i) => {
+    const arrow = state.sortCol === i ? (state.sortAsc ? " ▲" : " ▼") : "";
+    html += `<th data-col="${i}">${escHtml(h)}${arrow}</th>`;
+  });
+  html += "</tr></thead><tbody>";
+  for (const [r] of rows) {
+    html += "<tr>" + state.headers.map((_, i) => {
+      const c = r[i];
+      const body = c === "" ? '<span class="null">(empty)</span>' : escHtml(c);
+      return `<td title="${escHtml(c)}">${body}</td>`;
+    }).join("") + "</tr>";
+  }
+  html += "</tbody></table>";
+  if (filteredRows().length > max)
+    html += `<div style="padding:8px;color:var(--muted);font-size:.8rem">Showing first ${max} rows…</div>`;
+  el.innerHTML = html;
+  el.querySelectorAll("th").forEach(th => th.onclick = () => {
+    const c = +th.dataset.col;
+    if (state.sortCol === c) state.sortAsc = !state.sortAsc;
+    else { state.sortCol = c; state.sortAsc = true; }
+    renderTable();
+  });
+}
+
+function switchTab(name) {
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === name));
+  $("outTable").hidden = name !== "table";
+  $("outJson").hidden  = name !== "json";
+  $("outCsv").hidden   = name !== "csv";
+  $("search").disabled = name !== "table";
+}
+
+function convert() {
+  showError("");
+  const text = $("input").value;
+  if (!text.trim()) { showError("Paste some CSV or JSON first."); return; }
+
+  let dir = $("direction").value;
+  const kind = dir === "auto" ? detectInputKind(text) : (dir === "csv2json" ? "csv" : "json");
+
+  try {
+    if (kind === "csv") {
+      const delimChoice = $("delimiter").value;
+      const delim = delimChoice === "auto" ? detectDelimiter(text)
+                  : delimChoice === "tab" ? "\t" : delimChoice;
+      const parsed = parseCSV(text, delim);
+      // Heuristic: first row is a header if it isn't all-numeric
+      const hasHeader = parsed.rows.length > 0 &&
+        !parsed.headers.every(h => h.trim() !== "" && !isNaN(Number(h)));
+      const json = csvToJson(parsed, hasHeader);
+      state.headers = hasHeader ? parsed.headers : Object.keys(json[0] || {});
+      state.rows = hasHeader ? parsed.rows : json.map(o => state.headers.map(h => o[h] ?? ""));
+      state.kind = "csv";
+      state.jsonText = JSON.stringify(json, null, 2);
+      state.csvText = toCsvText(state.headers, state.rows, ",");
+      setBadge("CSV detected" + (delim === "\t" ? " (tab)" : ""), "csv");
+    } else {
+      const shape = detectJsonShape(text);
+      if (shape.kind === "invalid") { showError(shape.error); setBadge("invalid", "err"); return; }
+      const { headers, rows } = jsonToCsv(shape.value);
+      state.headers = headers; state.rows = rows; state.kind = "json";
+      state.csvText = toCsvText(headers, rows, ",");
+      state.jsonText = JSON.stringify(shape.value, null, 2);
+      setBadge(shape.kind === "ndjson" ? "NDJSON detected" : "JSON detected",
+               shape.kind === "ndjson" ? "ndjson" : "json");
+    }
+  } catch (e) {
+    showError("Conversion failed: " + e.message);
+    setBadge("error", "err");
+    return;
+  }
+
+  state.sortCol = -1; state.sortAsc = true;
+  $("search").value = "";
+  renderStats(); renderTable();
+  $("outJson").textContent = state.jsonText;
+  $("outCsv").textContent = state.csvText;
+  for (const id of ["copyBtn", "dlJson", "dlCsv"]) $(id).disabled = false;
+  switchTab(kind === "csv" ? "json" : "csv"); // land on the *converted* side
+}
+
+function download(name, text, type) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+$("convert").onclick = convert;
+$("input").addEventListener("keydown", e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) convert(); });
+document.querySelectorAll(".tab").forEach(t => t.onclick = () => switchTab(t.dataset.tab));
+$("search").oninput = renderTable;
+
+$("copyBtn").onclick = async () => {
+  const active = document.querySelector(".tab.active").dataset.tab;
+  const text = active === "json" ? state.jsonText : active === "csv" ? state.csvText : state.csvText;
+  try { await navigator.clipboard.writeText(text); $("copyBtn").textContent = "Copied ✓"; }
+  catch { $("copyBtn").textContent = "Copy failed"; }
+  setTimeout(() => $("copyBtn").textContent = "Copy output", 1500);
+};
+$("dlJson").onclick = () => download("data-wrangler.json", state.jsonText, "application/json");
+$("dlCsv").onclick  = () => download("data-wrangler.csv", state.csvText, "text/csv");
+
+$("file").onchange = e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = () => { $("input").value = reader.result; convert(); };
+  reader.readAsText(f);
+};
+
+$("sample").onclick = () => {
+  $("input").value =
+    'name,ticket,priority,status\n' +
+    '"Lindqvist, M",1042,high,open\n' +
+    'Ayesha Rahman,1043,low,closed\n' +
+    '"Jobayer ""JD"" Hossain",1044,medium,"in progress"\n' +
+    'Priya Nair,1045,high,open';
+  convert();
+};
+</script>
+</body>
+</html>
