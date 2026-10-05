@@ -15,3 +15,4 @@ single day, with its own README, source, and usage instructions.
 | [08](day-08-dns-checker) | DNS Health Checker | CLI that audits a domain's DNS records (MX, SPF, DMARC, NS, PTR, wildcard) and flags support-relevant issues, with JSON/CSV reports (Node.js stdlib only) |
 | [09](day-09-json-log-viewer) | JSON Log Viewer | Paste minified JSON / NDJSON logs and get a readable, filterable log view: level detection (strings, pino, syslog), timestamp normalisation, expandable JSON tree, live search, copy/download (single-file web app) |
 | [10](day-10-data-wrangler) | Data Wrangler | CSV ⇄ JSON converter with auto-format/delimiter detection, RFC-4180 parsing, sortable searchable table preview, copy/download (single-file web app) |
+| [11](day-11-uptime-monitor) | Service Uptime Monitor | Continuously polls HTTP(S) services, measures latency, classifies UP/DEGRADED/DOWN, alerts + logs incidents to NDJSON, live terminal dashboard (Node.js CLI, stdlib only) |
