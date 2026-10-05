@@ -1,0 +1,13 @@
+{
+  "services": [
+    {
+      "name": "Example homepage",
+      "url": "https://example.com"
+    },
+    {
+      "name": "GitHub status API",
+      "url": "https://www.githubstatus.com/api/v2/status.json"
+    }
+  ],
+  "slowThresholdMs": 1500
+}
