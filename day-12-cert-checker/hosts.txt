@@ -1,0 +1,9 @@
+# Sample host list for Cert Watch.
+# One host per line. Formats: host, host:port, or a full URL. # starts a comment.
+# These badssl.com hosts exist to DEMONSTRATE the tool's error handling:
+#   expired.badssl.com        -> EXPIRED (cert expired years ago)
+#   wrong.host.badssl.com     -> CERT_VERIFICATION_FAILED (hostname mismatch)
+github.com
+example.com
+expired.badssl.com
+wrong.host.badssl.com
