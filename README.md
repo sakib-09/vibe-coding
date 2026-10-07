@@ -17,3 +17,4 @@ single day, with its own README, source, and usage instructions.
 | [10](day-10-data-wrangler) | Data Wrangler | CSV ⇄ JSON converter with auto-format/delimiter detection, RFC-4180 parsing, sortable searchable table preview, copy/download (single-file web app) |
 | [11](day-11-uptime-monitor) | Service Uptime Monitor | Continuously polls HTTP(S) services, measures latency, classifies UP/DEGRADED/DOWN, alerts + logs incidents to NDJSON, live terminal dashboard (Node.js CLI, stdlib only) |
 | [12](day-12-cert-checker) | Cert Watch | SSL/TLS certificate expiry checker: grades OK/WARNING/CRITICAL/EXPIRED, two-phase verification with DER date parsing, proxy + corporate-CA support, JSON/CSV reports (Python CLI, stdlib only) |
+| [13](day-13-dupe-finder) | Dupe Finder | Find duplicate files by content with two-phase size-then-SHA-256 detection, report wasted disk space, safe confirm-first cleanup, JSON/CSV reports (Python CLI, stdlib only) |
