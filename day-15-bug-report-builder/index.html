@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bug Report Builder — Day 15</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --ink: #1c2333;
+    --muted: #687182;
+    --line: #e3e6ec;
+    --accent: #2456d6;
+    --accent-soft: #e8eefa;
+    --ok: #1e7e34;
+    --ok-soft: #e6f4ea;
+    --warn: #9a6a00;
+    --warn-soft: #fef3d8;
+    --err: #b3261e;
+    --err-soft: #fdecea;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.5;
+  }
+  header {
+    background: var(--card);
+    border-bottom: 1px solid var(--line);
+    padding: 22px 24px;
+  }
+  header h1 { margin: 0 0 4px; font-size: 1.6rem; }
+  header p { margin: 0; color: var(--muted); max-width: 70ch; }
+  main {
+    display: grid;
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    gap: 20px;
+    padding: 20px 24px 40px;
+    max-width: 1400px;
+    margin: 0 auto;
+    align-items: start;
+  }
+  @media (max-width: 1024px) { main { grid-template-columns: 1fr; } }
+  section.card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 18px;
+    margin-bottom: 20px;
+  }
+  section.card h2 {
+    margin: 0 0 12px;
+    font-size: 1.05rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+  }
+  label.field { display: block; margin-bottom: 12px; }
+  label.field > span { display: block; font-weight: 600; margin-bottom: 4px; font-size: 0.92rem; }
+  label.field small { display: block; font-weight: 400; color: var(--muted); margin-top: 3px; }
+  input[type="text"], select, textarea {
+    width: 100%;
+    padding: 9px 10px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    font: inherit;
+    background: #fff;
+    color: var(--ink);
+  }
+  textarea { min-height: 84px; resize: vertical; }
+  input:focus, select:focus, textarea:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: -1px;
+    border-color: var(--accent);
+  }
+  .env-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 14px;
+  }
+  @media (max-width: 560px) { .env-grid { grid-template-columns: 1fr; } }
+  .step-row { display: flex; gap: 8px; margin-bottom: 8px; align-items: stretch; }
+  .step-row .num {
+    flex: 0 0 30px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--accent-soft); color: var(--accent);
+    border-radius: 6px; font-weight: 700;
+  }
+  .step-row input { flex: 1; }
+  .step-row button {
+    flex: 0 0 auto;
+    border: 1px solid var(--line);
+    background: #fff;
+    border-radius: 6px;
+    cursor: pointer;
+    padding: 0 10px;
+    font-size: 1rem;
+    color: var(--muted);
+  }
+  .step-row button:hover { border-color: var(--accent); color: var(--accent); }
+  .add-step {
+    border: 1px dashed var(--line);
+    background: transparent;
+    width: 100%;
+    padding: 9px;
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--accent);
+    font: inherit;
+    font-weight: 600;
+  }
+  .add-step:hover { border-color: var(--accent); background: var(--accent-soft); }
+  .sev-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 8px;
+  }
+  .sev-card {
+    border: 2px solid var(--line);
+    border-radius: 8px;
+    padding: 10px;
+    cursor: pointer;
+    position: relative;
+  }
+  .sev-card input { position: absolute; opacity: 0; pointer-events: none; }
+  .sev-card strong { display: block; font-size: 0.95rem; }
+  .sev-card small { color: var(--muted); font-size: 0.78rem; line-height: 1.35; display: block; margin-top: 2px; }
+  .sev-card.selected { border-color: var(--accent); background: var(--accent-soft); }
+  .sev-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+  .check-line { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 8px; font-size: 0.95rem; }
+  .check-line input { margin-top: 4px; width: 16px; height: 16px; accent-color: var(--accent); }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+  button.action {
+    border: 1px solid var(--line);
+    background: var(--card);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    color: var(--ink);
+  }
+  button.action:hover { border-color: var(--accent); color: var(--accent); }
+  button.action.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.action.primary:hover { filter: brightness(1.08); color: #fff; }
+  button.action.danger:hover { border-color: var(--err); color: var(--err); }
+  select.example-pick { width: auto; }
+  #quality { list-style: none; margin: 0; padding: 0; }
+  #quality li {
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-bottom: 6px;
+    font-size: 0.9rem;
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+  }
+  #quality li.ok   { background: var(--ok-soft);   color: var(--ok); }
+  #quality li.warn { background: var(--warn-soft); color: var(--warn); }
+  #quality li.error{ background: var(--err-soft);  color: var(--err); }
+  #quality li .icon { font-weight: 700; flex: 0 0 auto; }
+  #quality-summary { font-weight: 700; margin: 0 0 10px; }
+  pre#preview {
+    background: #10141d;
+    color: #d7e0f0;
+    border-radius: 8px;
+    padding: 14px;
+    overflow: auto;
+    max-height: 520px;
+    font-size: 0.82rem;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  #toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--ink);
+    color: #fff;
+    padding: 10px 18px;
+    border-radius: 8px;
+    opacity: 0;
+    transition: opacity 0.25s;
+    pointer-events: none;
+    font-size: 0.9rem;
+  }
+  #toast.show { opacity: 1; }
+  footer { text-align: center; color: var(--muted); font-size: 0.85rem; padding: 0 24px 32px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🐞 Bug Report Builder</h1>
+  <p>Turn a vague "it doesn't work" into a bug report a developer can actually fix:
+  clear title, numbered reproduction steps, expected vs. actual, severity triage, and
+  a live quality check — exported as copy-ready Markdown.</p>
+</header>
+<main>
+  <div>
+    <section class="card">
+      <h2>1 · The bug</h2>
+      <label class="field">
+        <span>Title</span>
+        <input type="text" id="f-title" placeholder="Cart total shows $0.00 after applying a discount code" maxlength="140">
+        <small>One line, lead with the symptom — not "bug" or "it doesn't work".</small>
+      </label>
+    </section>
+
+    <section class="card">
+      <h2>2 · Environment</h2>
+      <div class="env-grid">
+        <label class="field">
+          <span>Operating system</span>
+          <select id="f-os">
+            <option value="">— select —</option>
+            <option>Windows 11</option>
+            <option>Windows 10</option>
+            <option>macOS</option>
+            <option>Linux</option>
+            <option>Android</option>
+            <option>iOS</option>
+            <option>Other</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Browser / device</span>
+          <input type="text" id="f-browser" placeholder="Chrome 131">
+        </label>
+        <label class="field">
+          <span>App version</span>
+          <input type="text" id="f-version" placeholder="ShopApp v2.4.1">
+        </label>
+        <label class="field">
+          <span>Network</span>
+          <input type="text" id="f-network" placeholder="Office Wi-Fi">
+        </label>
+      </div>
+      <label class="field" style="margin-bottom:0">
+        <span>Reporter <small style="display:inline">(optional)</small></span>
+        <input type="text" id="f-reporter" placeholder="Your name">
+      </label>
+    </section>
+
+    <section class="card">
+      <h2>3 · Steps to reproduce</h2>
+      <div id="steps"></div>
+      <button class="add-step" id="btn-add-step" type="button">+ Add step</button>
+      <small style="color:var(--muted)">Write each step as one concrete action — what you clicked, typed, or opened. Aim for at least 3.</small>
+    </section>
+
+    <section class="card">
+      <h2>4 · Expected vs. actual</h2>
+      <label class="field">
+        <span>Expected result</span>
+        <textarea id="f-expected" placeholder="What should have happened?"></textarea>
+      </label>
+      <label class="field" style="margin-bottom:0">
+        <span>Actual result</span>
+        <textarea id="f-actual" placeholder="What actually happened? Be specific — error text, wrong values, what you saw."></textarea>
+      </label>
+    </section>
+
+    <section class="card">
+      <h2>5 · Severity</h2>
+      <div class="sev-grid" id="sev-grid"></div>
+      <small style="color:var(--muted)">Severity = how bad the bug is. Priority (how fast it gets fixed) is the team's call — severity is your input to it.</small>
+    </section>
+
+    <section class="card">
+      <h2>6 · Evidence &amp; workaround</h2>
+      <div class="check-line"><input type="checkbox" id="e-reproduced"><label for="e-reproduced">Reproduced more than once</label></div>
+      <div class="check-line"><input type="checkbox" id="e-screenshot"><label for="e-screenshot">Screenshot / screen recording attached</label></div>
+      <div class="check-line"><input type="checkbox" id="e-logs"><label for="e-logs">Console or network logs captured</label></div>
+      <div class="check-line"><input type="checkbox" id="e-multiple"><label for="e-multiple">Seen by other users / testers too</label></div>
+      <label class="field" style="margin-top:12px; margin-bottom:0">
+        <span>Workaround <small style="display:inline">(optional)</small></span>
+        <textarea id="f-workaround" placeholder="Is there a way to get the job done despite the bug?"></textarea>
+      </label>
+    </section>
+
+    <div class="toolbar">
+      <button class="action primary" id="btn-copy" type="button">📋 Copy Markdown</button>
+      <button class="action" id="btn-download" type="button">⬇ Download .md</button>
+      <button class="action" id="btn-save" type="button">💾 Save draft</button>
+      <select class="example-pick action" id="sel-example" aria-label="Load an example">
+        <option value="">Load example…</option>
+        <option value="0">Discount-code cart bug</option>
+        <option value="1">Avatar overlap on mobile</option>
+      </select>
+      <button class="action danger" id="btn-clear" type="button">🗑 Clear</button>
+    </div>
+  </div>
+
+  <div>
+    <section class="card">
+      <h2>Report quality</h2>
+      <p id="quality-summary"></p>
+      <ul id="quality"></ul>
+    </section>
+    <section class="card">
+      <h2>Markdown preview</h2>
+      <pre id="preview"></pre>
+    </section>
+  </div>
+</main>
+<div id="toast"></div>
+<footer>Single-file app — no build step, no dependencies, works offline. Your draft never leaves this browser.</footer>
+<script>
+/* =====================================================================
+   Bug Report Builder — pure logic (no DOM). These functions are
+   deliberately free of browser APIs so they can be unit-tested with
+   Node (see test.js). The UI wiring lives below, guarded for browsers.
+   ===================================================================== */
+
+var SEVERITIES = [
+  { id: 'blocker',  label: 'Blocker',  color: '#b3261e',
+    blurb: 'App unusable, data loss, or security hole. Stop everything.' },
+  { id: 'critical', label: 'Critical', color: '#d93025',
+    blurb: 'A major feature is broken and there is no workaround.' },
+  { id: 'major',    label: 'Major',    color: '#e8710a',
+    blurb: 'A feature is broken, but a workaround exists.' },
+  { id: 'minor',    label: 'Minor',    color: '#9a6a00',
+    blurb: 'Cosmetic issue or small annoyance. Easy to work around.' },
+  { id: 'trivial',  label: 'Trivial',  color: '#5f6b7a',
+    blurb: 'Spelling, alignment, polish. Fix when convenient.' }
+];
+
+var EVIDENCE_LABELS = [
+  ['reproduced', 'Reproduced more than once'],
+  ['screenshot', 'Screenshot / screen recording attached'],
+  ['logs',       'Console or network logs captured'],
+  ['multiple',   'Seen by other users / testers too']
+];
+
+var EXAMPLES = [
+  {
+    title: 'Cart total shows $0.00 after applying a discount code',
+    os: 'Windows 11', browser: 'Chrome 131', version: 'ShopApp v2.4.1',
+    network: 'Office Wi-Fi', reporter: 'QA Tester', date: '2026-10-09',
+    steps: [
+      'Add any item to the cart.',
+      'Go to checkout and enter the discount code SAVE10.',
+      'Click "Apply".'
+    ],
+    expected: 'The cart total updates to the discounted price (e.g. $90.00 for a $100 item).',
+    actual: 'The cart total changes to $0.00 and the order can be placed for free.',
+    severity: 'major',
+    evidence: { reproduced: true, screenshot: true, logs: false, multiple: false },
+    workaround: 'Remove the discount code, complete the purchase without it, then email support for a manual refund.'
+  },
+  {
+    title: 'Profile avatar overlaps the username on screens narrower than 400px',
+    os: 'Android', browser: 'Chrome Mobile 131', version: 'ShopApp v2.4.1',
+    network: 'LTE', reporter: 'QA Tester', date: '2026-10-09',
+    steps: [
+      'Open the app and sign in.',
+      'Tap the profile icon in the top-right corner.',
+      'Resize the window (or rotate the phone) so the viewport is narrower than 400px.'
+    ],
+    expected: 'The avatar and the username sit side by side with no overlap.',
+    actual: 'The avatar image covers the first few characters of the username.',
+    severity: 'minor',
+    evidence: { reproduced: true, screenshot: true, logs: false, multiple: true },
+    workaround: ''
+  }
+];
+
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function blankReport() {
+  return {
+    title: '', os: '', browser: '', version: '', network: '', reporter: '',
+    date: todayStr(), steps: [''], expected: '', actual: '', severity: '',
+    evidence: { reproduced: false, screenshot: false, logs: false, multiple: false },
+    workaround: ''
+  };
+}
+
+function severityLabel(id) {
+  for (var i = 0; i < SEVERITIES.length; i++) {
+    if (SEVERITIES[i].id === id) return SEVERITIES[i].label;
+  }
+  return 'Not set';
+}
+
+/* Escape Markdown metacharacters so a title like "#hashtag" renders literally. */
+function escapeMd(s) {
+  return String(s == null ? '' : s).replace(/([\\`*_{}\[\]()#+!])/g, '\\$1');
+}
+
+/* Build the copy-ready Markdown bug report. */
+function buildMarkdown(r) {
+  r = r || {};
+  var lines = [];
+  var title = (r.title || '').trim() || 'Untitled bug';
+
+  lines.push('# Bug: ' + escapeMd(title), '');
+  lines.push('**Severity:** ' + severityLabel(r.severity));
+
+  var env = [r.os, r.browser, r.version, r.network]
+    .map(function (x) { return (x || '').trim(); })
+    .filter(Boolean)
+    .join(' · ');
+  lines.push('**Environment:** ' + (env || 'Not specified'));
+
+  var who = [(r.reporter || '').trim(), r.date].filter(Boolean).join(' — ');
+  lines.push('**Reported:** ' + (who || 'Unknown'));
+  lines.push('');
+
+  lines.push('## Steps to reproduce');
+  var steps = (r.steps || []).map(function (s) { return (s || '').trim(); }).filter(Boolean);
+  if (steps.length) {
+    steps.forEach(function (s, i) { lines.push((i + 1) + '. ' + s); });
+  } else {
+    lines.push('_No steps provided._');
+  }
+
+  lines.push('', '## Expected result', '');
+  lines.push((r.expected || '').trim() || '_Not provided._');
+  lines.push('', '## Actual result', '');
+  lines.push((r.actual || '').trim() || '_Not provided._');
+  lines.push('', '## Evidence');
+  EVIDENCE_LABELS.forEach(function (pair) {
+    var tick = (r.evidence && r.evidence[pair[0]]) ? 'x' : ' ';
+    lines.push('- [' + tick + '] ' + pair[1]);
+  });
+
+  var w = (r.workaround || '').trim();
+  if (w) {
+    lines.push('', '## Workaround', '', w);
+  }
+
+  lines.push('');
+  return lines.join('\n');
+}
+
+/*
+ * Quality checks. Returns an array of {level: 'ok'|'warn'|'error', message}.
+ * Errors = the report is not ready to file. Warnings = it would be better with more.
+ */
+function runChecks(r) {
+  r = r || {};
+  var checks = [];
+  function push(level, message) { checks.push({ level: level, message: message }); }
+
+  /* --- title --- */
+  var t = (r.title || '').trim();
+  if (!t) {
+    push('error', 'Add a clear title that names the symptom.');
+  } else if (t.length < 12) {
+    push('error', 'Title is too short (' + t.length + ' chars) — summarize the symptom in one line.');
+  } else if (/^(bug|issue|problem|error|it'?s broken|doesn'?t work|not working)\b/i.test(t)) {
+    push('warn', 'Title starts with a generic word — lead with the symptom instead.');
+  } else {
+    push('ok', 'Title describes the symptom.');
+  }
+
+  /* --- steps --- */
+  var steps = (r.steps || []).map(function (s) { return (s || '').trim(); });
+  var nonEmpty = steps.filter(Boolean);
+  if (nonEmpty.length === 0) {
+    push('error', 'Add at least one step to reproduce.');
+  } else {
+    if (nonEmpty.length < steps.length) {
+      push('error', 'One or more steps are empty — fill them in or remove them.');
+    }
+    if (nonEmpty.length < 3) {
+      push('warn', 'Fewer than 3 steps — most reproducible bugs need at least 3 concrete actions.');
+    } else {
+      push('ok', nonEmpty.length + ' reproduction steps.');
+    }
+    nonEmpty.forEach(function (s, i) {
+      if (s.length < 5) {
+        push('warn', 'Step ' + (i + 1) + ' is very short — say exactly what you clicked or typed.');
+      }
+    });
+  }
+
+  /* --- expected / actual --- */
+  var expected = (r.expected || '').trim();
+  var actual = (r.actual || '').trim();
+  if (!expected) {
+    push('error', 'Describe the expected result — what should have happened?');
+  } else {
+    push('ok', 'Expected result is filled in.');
+  }
+  if (!actual) {
+    push('error', 'Describe the actual result — what actually went wrong?');
+  } else if (actual.toLowerCase() === expected.toLowerCase()) {
+    push('error', 'Expected and actual results are identical — describe what actually went wrong.');
+  } else {
+    push('ok', 'Actual result differs from expected.');
+  }
+
+  /* --- severity --- */
+  if (!r.severity) {
+    push('error', 'Pick a severity — it is how the team triages the report.');
+  } else {
+    push('ok', 'Severity set: ' + severityLabel(r.severity) + '.');
+  }
+
+  /* --- environment --- */
+  if (!(r.os || '').trim() || !(r.version || '').trim()) {
+    push('warn', 'Environment is incomplete — OS and app version help developers reproduce it.');
+  } else {
+    push('ok', 'Environment is filled in.');
+  }
+
+  /* --- evidence --- */
+  var evCount = EVIDENCE_LABELS.filter(function (pair) {
+    return r.evidence && r.evidence[pair[0]];
+  }).length;
+  if (evCount === 0) {
+    push('warn', 'No evidence checked — attach a screenshot or confirm you reproduced it twice.');
+  } else {
+    push('ok', evCount + ' evidence item(s) recorded.');
+  }
+
+  return checks;
+}
+
+/* Suggest a download filename from the report title. */
+function filenameFor(title) {
+  var slug = (title || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60);
+  return 'bug-' + (slug || 'report') + '.md';
+}
+
+/* Expose the pure functions for Node tests (harmless in browsers). */
+if (typeof globalThis !== 'undefined') {
+  globalThis.__bugLogic = {
+    SEVERITIES: SEVERITIES,
+    EXAMPLES: EXAMPLES,
+    EVIDENCE_LABELS: EVIDENCE_LABELS,
+    blankReport: blankReport,
+    severityLabel: severityLabel,
+    escapeMd: escapeMd,
+    buildMarkdown: buildMarkdown,
+    runChecks: runChecks,
+    filenameFor: filenameFor
+  };
+}
+</script>
+<script>
+/* =====================================================================
+   UI wiring (browser only). Reads the form into a report object, renders
+   the live Markdown preview and the quality checklist.
+   ===================================================================== */
+(function () {
+  if (typeof document === 'undefined') return;
+
+  function $(id) { return document.getElementById(id); }
+
+  var DRAFT_KEY = 'bugreport-builder-draft-v1';
+  var toastTimer = null;
+
+  function toast(msg) {
+    var el = $('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.classList.remove('show'); }, 2200);
+  }
+
+  /* ---------- severity cards ---------- */
+  function renderSeverityCards(selected) {
+    var grid = $('sev-grid');
+    grid.innerHTML = '';
+    SEVERITIES.forEach(function (s) {
+      var label = document.createElement('label');
+      label.className = 'sev-card' + (selected === s.id ? ' selected' : '');
+      label.innerHTML =
+        '<input type="radio" name="severity" value="' + s.id + '"' +
+        (selected === s.id ? ' checked' : '') + '>' +
+        '<strong><span class="sev-dot" style="background:' + s.color + '"></span>' +
+        s.label + '</strong><small>' + s.blurb + '</small>';
+      grid.appendChild(label);
+    });
+  }
+
+  /* ---------- repro steps ---------- */
+  function addStepRow(text) {
+    var container = $('steps');
+    var row = document.createElement('div');
+    row.className = 'step-row';
+    var n = container.children.length + 1;
+    row.innerHTML =
+      '<span class="num">' + n + '</span>' +
+      '<input type="text" placeholder="Step ' + n + ': what did you do?" value="' +
+      String(text || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;') + '">' +
+      '<button type="button" data-act="up" title="Move up">↑</button>' +
+      '<button type="button" data-act="down" title="Move down">↓</button>' +
+      '<button type="button" data-act="del" title="Delete step">✕</button>';
+    container.appendChild(row);
+    renumberSteps();
+  }
+
+  function renumberSteps() {
+    var rows = $('steps').children;
+    for (var i = 0; i < rows.length; i++) {
+      rows[i].querySelector('.num').textContent = i + 1;
+      rows[i].querySelector('input').placeholder = 'Step ' + (i + 1) + ': what did you do?';
+    }
+  }
+
+  $('steps').addEventListener('click', function (e) {
+    var btn = e.target.closest('button[data-act]');
+    if (!btn) return;
+    var row = btn.closest('.step-row');
+    var container = $('steps');
+    if (btn.dataset.act === 'del') {
+      if (container.children.length > 1) row.remove();
+      else row.querySelector('input').value = '';
+    } else if (btn.dataset.act === 'up' && row.previousElementSibling) {
+      container.insertBefore(row, row.previousElementSibling);
+    } else if (btn.dataset.act === 'down' && row.nextElementSibling) {
+      container.insertBefore(row.nextElementSibling, row);
+    }
+    renumberSteps();
+    update();
+  });
+
+  $('btn-add-step').addEventListener('click', function () {
+    addStepRow('');
+    var inputs = $('steps').querySelectorAll('input');
+    inputs[inputs.length - 1].focus();
+    update();
+  });
+
+  /* ---------- form <-> report ---------- */
+  function readForm() {
+    var stepInputs = $('steps').querySelectorAll('.step-row input');
+    var steps = [];
+    for (var i = 0; i < stepInputs.length; i++) steps.push(stepInputs[i].value);
+    var sev = document.querySelector('input[name="severity"]:checked');
+    return {
+      title: $('f-title').value,
+      os: $('f-os').value,
+      browser: $('f-browser').value,
+      version: $('f-version').value,
+      network: $('f-network').value,
+      reporter: $('f-reporter').value,
+      date: todayStr(),
+      steps: steps,
+      expected: $('f-expected').value,
+      actual: $('f-actual').value,
+      severity: sev ? sev.value : '',
+      evidence: {
+        reproduced: $('e-reproduced').checked,
+        screenshot: $('e-screenshot').checked,
+        logs: $('e-logs').checked,
+        multiple: $('e-multiple').checked
+      },
+      workaround: $('f-workaround').value
+    };
+  }
+
+  function writeForm(r) {
+    $('f-title').value = r.title || '';
+    $('f-os').value = r.os || '';
+    $('f-browser').value = r.browser || '';
+    $('f-version').value = r.version || '';
+    $('f-network').value = r.network || '';
+    $('f-reporter').value = r.reporter || '';
+    $('steps').innerHTML = '';
+    (r.steps && r.steps.length ? r.steps : ['']).forEach(addStepRow);
+    $('f-expected').value = r.expected || '';
+    $('f-actual').value = r.actual || '';
+    renderSeverityCards(r.severity || '');
+    $('e-reproduced').checked = !!(r.evidence && r.evidence.reproduced);
+    $('e-screenshot').checked = !!(r.evidence && r.evidence.screenshot);
+    $('e-logs').checked = !!(r.evidence && r.evidence.logs);
+    $('e-multiple').checked = !!(r.evidence && r.evidence.multiple);
+    $('f-workaround').value = r.workaround || '';
+  }
+
+  /* ---------- live preview + quality ---------- */
+  var ICONS = { ok: '✅', warn: '⚠️', error: '⛔' };
+
+  function update() {
+    var r = readForm();
+    $('preview').textContent = buildMarkdown(r);
+
+    var checks = runChecks(r);
+    var errors = checks.filter(function (c) { return c.level === 'error'; }).length;
+    var warns = checks.filter(function (c) { return c.level === 'warn'; }).length;
+
+    var summary = $('quality-summary');
+    if (errors > 0) {
+      summary.textContent = '⛔ ' + errors + ' problem' + (errors === 1 ? '' : 's') +
+        ' to fix' + (warns ? ' · ⚠️ ' + warns + ' suggestion' + (warns === 1 ? '' : 's') : '') + '.';
+    } else if (warns > 0) {
+      summary.textContent = '⚠️ Fileable — ' + warns + ' suggestion' + (warns === 1 ? '' : 's') + ' to polish it.';
+    } else {
+      summary.textContent = '✅ Ready to file — this is a solid bug report.';
+    }
+
+    var list = $('quality');
+    list.innerHTML = '';
+    checks.forEach(function (c) {
+      var li = document.createElement('li');
+      li.className = c.level;
+      var icon = document.createElement('span');
+      icon.className = 'icon';
+      icon.textContent = ICONS[c.level];
+      li.appendChild(icon);
+      li.appendChild(document.createTextNode(c.message));
+      list.appendChild(li);
+    });
+
+    /* silent auto-save */
+    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(r)); } catch (e) { /* ignore */ }
+  }
+
+  /* ---------- toolbar actions ---------- */
+  function markdownNow() { return buildMarkdown(readForm()); }
+
+  $('btn-copy').addEventListener('click', function () {
+    var text = markdownNow();
+    function done() { toast('Markdown copied — paste it into the ticket.'); }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, function () { fallbackCopy(text); done(); });
+    } else {
+      fallbackCopy(text);
+      done();
+    }
+  });
+
+  function fallbackCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch (e) { /* ignore */ }
+    document.body.removeChild(ta);
+  }
+
+  $('btn-download').addEventListener('click', function () {
+    var blob = new Blob([markdownNow()], { type: 'text/markdown' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filenameFor(readForm().title);
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () {
+      URL.revokeObjectURL(a.href);
+      a.remove();
+    }, 500);
+    toast('Downloaded ' + a.download);
+  });
+
+  $('btn-save').addEventListener('click', function () {
+    try {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify(readForm()));
+      toast('Draft saved in this browser.');
+    } catch (e) { toast('Could not save draft.'); }
+  });
+
+  $('sel-example').addEventListener('change', function () {
+    var i = parseInt(this.value, 10);
+    if (isNaN(i)) return;
+    var ex = JSON.parse(JSON.stringify(EXAMPLES[i])); /* deep clone */
+    writeForm(ex);
+    update();
+    toast('Example loaded — edit it freely.');
+    this.value = '';
+  });
+
+  $('btn-clear').addEventListener('click', function () {
+    if (!confirm('Clear the whole form?')) return;
+    try { localStorage.removeItem(DRAFT_KEY); } catch (e) { /* ignore */ }
+    writeForm(blankReport());
+    update();
+    toast('Form cleared.');
+  });
+
+  /* ---------- init ---------- */
+  document.addEventListener('input', update);
+  document.addEventListener('change', function (e) {
+    if (e.target && e.target.name === 'severity') {
+      var cards = document.querySelectorAll('.sev-card');
+      for (var i = 0; i < cards.length; i++) cards[i].classList.remove('selected');
+      e.target.closest('.sev-card').classList.add('selected');
+    }
+    update();
+  });
+
+  var restored = null;
+  try { restored = JSON.parse(localStorage.getItem(DRAFT_KEY)); } catch (e) { /* ignore */ }
+  writeForm(restored && typeof restored === 'object' ? restored : blankReport());
+  update();
+  if (restored) toast('Draft restored.');
+})();
+</script>
+</body>
+</html>
