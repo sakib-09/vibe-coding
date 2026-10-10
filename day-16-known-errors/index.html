@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Known Error Database — Day 16</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --ink: #1c2333;
+    --muted: #687182;
+    --line: #e3e6ec;
+    --accent: #2456d6;
+    --accent-soft: #e8eefa;
+    --ok: #1e7e34;
+    --ok-soft: #e6f4ea;
+    --warn: #9a6a00;
+    --warn-soft: #fef3d8;
+    --err: #b3261e;
+    --err-soft: #fdecea;
+    --p1: #b3261e; --p1-soft: #fdecea;
+    --p2: #b35400; --p2-soft: #fdf0e2;
+    --p3: #2456d6; --p3-soft: #e8eefa;
+    --p4: #5f6b7a; --p4-soft: #eef1f4;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.5;
+  }
+  header {
+    background: var(--card);
+    border-bottom: 1px solid var(--line);
+    padding: 22px 24px;
+  }
+  header h1 { margin: 0 0 4px; font-size: 1.6rem; }
+  header p { margin: 0; color: var(--muted); max-width: 78ch; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 20px 24px 60px; }
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin: 18px 0;
+  }
+  .stat {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+  }
+  .stat .num { font-size: 1.6rem; font-weight: 700; }
+  .stat .lbl { color: var(--muted); font-size: .85rem; }
+  .toolbar {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 12px; margin-bottom: 16px;
+  }
+  .toolbar input[type="search"], .toolbar select, .form-grid input,
+  .form-grid select, .form-grid textarea {
+    font: inherit; padding: 8px 10px;
+    border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink);
+  }
+  .toolbar input[type="search"] { flex: 1 1 220px; }
+  button, .btn {
+    font: inherit; padding: 8px 14px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--line); background: #fff; color: var(--ink);
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.danger { color: var(--err); border-color: #efb9b4; }
+  button:hover { filter: brightness(0.97); }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 14px 16px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .card .top { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .card h3 { margin: 0; font-size: 1.02rem; }
+  .card .sym { color: var(--muted); font-size: .9rem; margin: 0; }
+  .card .meta { color: var(--muted); font-size: .8rem; margin-top: auto; }
+  .badge {
+    display: inline-block; padding: 2px 10px; border-radius: 999px;
+    font-size: .75rem; font-weight: 600; white-space: nowrap;
+  }
+  .id { background: #eef1f4; color: #3c4655; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .sev-P1 { background: var(--p1-soft); color: var(--p1); }
+  .sev-P2 { background: var(--p2-soft); color: var(--p2); }
+  .sev-P3 { background: var(--p3-soft); color: var(--p3); }
+  .sev-P4 { background: var(--p4-soft); color: var(--p4); }
+  .st-work { background: var(--warn-soft); color: var(--warn); }
+  .st-fix  { background: var(--accent-soft); color: var(--accent); }
+  .st-done { background: var(--ok-soft); color: var(--ok); }
+  .card .actions { display: flex; gap: 8px; }
+  .empty {
+    background: var(--card); border: 1px dashed var(--line); border-radius: var(--radius);
+    padding: 40px 20px; text-align: center; color: var(--muted);
+  }
+  /* Modals */
+  .modal-back {
+    position: fixed; inset: 0; background: rgba(20, 26, 38, .45);
+    display: none; align-items: flex-start; justify-content: center;
+    padding: 40px 16px; z-index: 50; overflow-y: auto;
+  }
+  .modal-back.open { display: flex; }
+  .modal {
+    background: #fff; border-radius: 12px; max-width: 720px; width: 100%;
+    padding: 22px 24px; box-shadow: 0 12px 40px rgba(0,0,0,.18);
+  }
+  .modal h2 { margin: 0 0 6px; font-size: 1.25rem; }
+  .modal .badges { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 14px; }
+  .modal h4 { margin: 16px 0 6px; font-size: .95rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .modal ol { margin: 6px 0; padding-left: 22px; }
+  .modal ol li { margin: 4px 0; }
+  .modal .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 18px; }
+  .kv { font-size: .9rem; color: var(--muted); }
+  .kv b { color: var(--ink); font-weight: 600; }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+  .form-grid .full { grid-column: 1 / -1; }
+  .form-grid label { display: block; font-size: .82rem; color: var(--muted); margin-bottom: 4px; }
+  .form-grid input, .form-grid select, .form-grid textarea { width: 100%; }
+  .form-grid textarea { min-height: 74px; resize: vertical; }
+  .form-errors {
+    display: none; background: var(--err-soft); color: var(--err);
+    border: 1px solid #f0b6b1; border-radius: 8px; padding: 10px 14px; margin-top: 12px;
+  }
+  .form-errors.show { display: block; }
+  .form-errors ul { margin: 4px 0; padding-left: 20px; }
+  .tag { display: inline-block; background: #eef1f4; border-radius: 6px; padding: 1px 8px; font-size: .78rem; margin: 0 4px 4px 0; }
+  footer { color: var(--muted); font-size: .82rem; text-align: center; padding: 24px; }
+  @media (max-width: 640px) { .form-grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Known Error Database (KEDB)</h1>
+  <p>
+    A support-desk tool built around the ITIL idea of a <b>known error</b>: a problem whose
+    root cause is understood and for which a documented <b>workaround</b> exists.
+    Search by symptom or error message, apply the workaround, and track which errors
+    are permanently fixed. Everything stays in your browser (localStorage).
+  </p>
+</header>
+
+<div class="wrap">
+  <div class="stats" id="stats"></div>
+
+  <div class="toolbar">
+    <input type="search" id="search" placeholder="Search symptoms, error text, workaround steps…" aria-label="Search known errors">
+    <select id="fCategory" aria-label="Filter by category"></select>
+    <select id="fSeverity" aria-label="Filter by severity"></select>
+    <select id="fStatus" aria-label="Filter by status"></select>
+    <select id="fSort" aria-label="Sort records">
+      <option value="updated">Sort: recently updated</option>
+      <option value="severity">Sort: severity (P1 first)</option>
+      <option value="reported">Sort: most reported</option>
+    </select>
+    <button class="primary" id="btnNew">+ New record</button>
+    <button id="btnExport">Export JSON</button>
+    <button id="btnImport">Import JSON</button>
+    <button id="btnReset" title="Restore the built-in sample data">Reset sample data</button>
+    <input type="file" id="fileImport" accept="application/json,.json" hidden>
+  </div>
+
+  <div class="cards" id="recordList"></div>
+  <div class="empty" id="emptyState" hidden>
+    <p><b>No records match.</b></p>
+    <p>Try a different search, or add the first known-error record for this issue.</p>
+  </div>
+</div>
+
+<div class="modal-back" id="detailModal"><div class="modal" id="detailBody"></div></div>
+<div class="modal-back" id="formModal"><div class="modal">
+  <h2 id="formTitle">New known-error record</h2>
+  <div class="form-errors" id="formErrors"><b>Please fix:</b><ul id="formErrorList"></ul></div>
+  <div class="form-grid">
+    <div class="full"><label for="inTitle">Title *</label><input id="inTitle" placeholder="e.g. VPN client fails with error 809"></div>
+    <div><label for="inCategory">Category *</label><select id="inCategory"></select></div>
+    <div><label for="inSeverity">Severity *</label><select id="inSeverity"></select></div>
+    <div><label for="inStatus">Status *</label><select id="inStatus"></select></div>
+    <div><label for="inReported">Times reported</label><input id="inReported" type="number" min="0" value="1"></div>
+    <div class="full"><label for="inSymptoms">Symptoms (what the user sees) *</label><textarea id="inSymptoms"></textarea></div>
+    <div class="full"><label for="inErrorText">Error message / code (optional)</label><textarea id="inErrorText"></textarea></div>
+    <div class="full"><label for="inRootCause">Root cause (optional)</label><textarea id="inRootCause"></textarea></div>
+    <div class="full"><label for="inWorkaround">Workaround steps — one per line *</label><textarea id="inWorkaround" rows="5" placeholder="1. …&#10;2. …"></textarea></div>
+    <div class="full"><label for="inFix">Permanent fix (optional)</label><textarea id="inFix"></textarea></div>
+    <div><label for="inTickets">Linked ticket IDs (comma-separated, optional)</label><input id="inTickets" placeholder="INC-1234, INC-1250"></div>
+    <div><label for="inTags">Tags (comma-separated, optional)</label><input id="inTags" placeholder="vpn, remote"></div>
+  </div>
+  <div class="row">
+    <button class="primary" id="btnSave">Save record</button>
+    <button id="btnCancel">Cancel</button>
+  </div>
+</div></div>
+
+<footer>Day 16 of the daily build series — single HTML file, no dependencies, no network calls.</footer>
+
+<script>
+/* =====================================================================
+ * Known Error Database — pure logic (browser-free).
+ *
+ * Everything in this block is plain data + pure functions: it never
+ * touches the DOM, so it can be unit-tested with plain Node.
+ * ===================================================================== */
+'use strict';
+
+const CATEGORIES = ['Network', 'Email', 'Printing', 'Hardware', 'Software', 'Access & Security', 'VPN / Remote'];
+const SEVERITIES = ['P1', 'P2', 'P3', 'P4'];            // P1 = Critical … P4 = Low
+const SEVERITY_LABEL = { P1: 'Critical', P2: 'High', P3: 'Medium', P4: 'Low' };
+const SEVERITY_RANK = { P1: 1, P2: 2, P3: 3, P4: 4 };
+const STATUSES = ['Workaround available', 'Fix in progress', 'Resolved permanently'];
+
+/** Today's date as YYYY-MM-DD. */
+function todayISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/** Built-in sample data: realistic support-desk known errors. */
+function seedRecords() {
+  return [
+    {
+      id: 'KE-0001',
+      title: "VPN client fails with error 809: 'The network connection was interrupted'",
+      category: 'VPN / Remote', severity: 'P2', status: 'Workaround available',
+      reportedCount: 23, lastUpdated: '2026-10-08',
+      symptoms: 'User cannot connect to the corporate VPN. The client errors out immediately with error 809. Mostly affects home users since a recent ISP router firmware update.',
+      errorText: 'Error 809: The network connection between your computer and the VPN server could not be established because the remote server is not responding.',
+      rootCause: 'ISP routers now block UDP 500/4500 (IPsec NAT-T) after the firmware update, so the IKEv2 handshake never completes.',
+      workaround: [
+        'Open the VPN client settings and change the protocol from IKEv2 to SSTP (uses TCP 443, which the router allows).',
+        'Reconnect the VPN — it should establish within 30 seconds.',
+        'If it still fails, disconnect home Wi-Fi, wait 10 seconds, and reconnect before retrying.'
+      ],
+      permanentFix: 'Rolling out an updated client profile that defaults to SSTP. Network team is engaging the ISP about the blocked ports.',
+      linkedTickets: ['INC-4412', 'INC-4419', 'INC-4423'],
+      tags: ['vpn', 'ikev2', '809', 'remote']
+    },
+    {
+      id: 'KE-0002',
+      title: "Outlook stuck on 'Trying to connect' after a password change",
+      category: 'Email', severity: 'P3', status: 'Workaround available',
+      reportedCount: 41, lastUpdated: '2026-10-06',
+      symptoms: "Outlook desktop shows 'Trying to connect' in the status bar forever. Outlook on the web (OWA) works fine with the new password.",
+      errorText: 'Trying to connect… (no error dialog)',
+      rootCause: 'Windows Credential Manager still holds the old password, so Outlook keeps authenticating with a stale cached credential.',
+      workaround: [
+        'Close Outlook completely.',
+        'Open Control Panel → Credential Manager → Windows Credentials.',
+        'Remove every entry that mentions MicrosoftOffice or the Exchange server name.',
+        'Reopen Outlook and sign in with the new password.'
+      ],
+      permanentFix: 'Logged as problem PRB-118; no vendor fix yet.',
+      linkedTickets: ['INC-4377', 'INC-4401'],
+      tags: ['outlook', 'password', 'credentials']
+    },
+    {
+      id: 'KE-0003',
+      title: 'Shared network printer goes offline after the Windows 11 24H2 update',
+      category: 'Printing', severity: 'P2', status: 'Fix in progress',
+      reportedCount: 17, lastUpdated: '2026-10-09',
+      symptoms: 'After updating to Windows 11 24H2, the shared office printer shows Offline and print jobs pile up in the queue. Restarting the spooler brings it back for a few hours.',
+      errorText: 'Printer status: Offline. Event Viewer: PrintService error 372.',
+      rootCause: 'The vendor Type 3 print driver is incompatible with 24H2 driver isolation changes; the spooler process crashes under load.',
+      workaround: [
+        'Restart the Print Spooler service (services.msc → Print Spooler → Restart).',
+        'If it recurs, switch the printer to the built-in Type 4 (class) driver as a temporary measure.',
+        'For urgent jobs, print to PDF and use the USB walk-up printer.'
+      ],
+      permanentFix: 'Vendor has acknowledged the issue; waiting on the updated driver package before deploying fleet-wide.',
+      linkedTickets: ['INC-4430'],
+      tags: ['printer', 'spooler', '24h2', 'driver']
+    },
+    {
+      id: 'KE-0004',
+      title: 'Account locked out and MFA push notifications not arriving',
+      category: 'Access & Security', severity: 'P2', status: 'Workaround available',
+      reportedCount: 29, lastUpdated: '2026-10-07',
+      symptoms: 'User is locked out after several sign-in attempts and the "Approve sign-in" push never arrives on their phone, so they cannot self-unlock.',
+      errorText: 'Your account is temporarily locked to prevent unauthorized use. Try again later.',
+      rootCause: 'Push delivery fails when the authenticator app has notification permission disabled or battery optimization kills its background service.',
+      workaround: [
+        'Do NOT keep retrying the password — each attempt extends the lockout.',
+        'Open the authenticator app and use the 6-digit one-time code instead of waiting for the push.',
+        'After signing in, enable notifications for the authenticator app and turn off battery optimization for it.',
+        'If still locked, unlock via the self-service password portal or call the service desk.'
+      ],
+      permanentFix: 'Adding an authenticator-app health check to new-hire onboarding documentation.',
+      linkedTickets: ['INC-4388', 'INC-4415'],
+      tags: ['mfa', 'lockout', 'authenticator']
+    },
+    {
+      id: 'KE-0005',
+      title: 'Mapped network drive (S:) keeps asking for credentials',
+      category: 'Network', severity: 'P3', status: 'Workaround available',
+      reportedCount: 12, lastUpdated: '2026-10-05',
+      symptoms: 'The mapped S: drive repeatedly prompts for a username and password, even though the user checks "Remember my credentials".',
+      errorText: 'Enter network credentials — The user name or password is incorrect (it is not).',
+      rootCause: 'A stale cached credential for the file server plus the mapping using the short NetBIOS name, while Kerberos expects the fully qualified name.',
+      workaround: [
+        'Open Credential Manager → Windows Credentials and remove every entry for the file server.',
+        'Disconnect the S: mapping (right-click → Disconnect).',
+        'Remap using the full name, e.g. \\\\fileserver01.corp.example.ca\\shared, and tick "Reconnect at sign-in".'
+      ],
+      permanentFix: 'Login script updated to map drives by FQDN; existing mappings will be migrated in the November maintenance window.',
+      linkedTickets: ['INC-4362'],
+      tags: ['mapped-drive', 'credentials', 'smb']
+    },
+    {
+      id: 'KE-0006',
+      title: 'Teams crashes when starting screen share on dual monitors',
+      category: 'Software', severity: 'P4', status: 'Resolved permanently',
+      reportedCount: 8, lastUpdated: '2026-09-28',
+      symptoms: 'Microsoft Teams closes instantly when the user clicks Share on a machine with two monitors. Single-monitor machines are unaffected.',
+      errorText: 'Application crash — no dialog (Event Viewer: Application Error 1000, Teams.exe).',
+      rootCause: 'GPU-acceleration bug in the screen-capture pipeline when spanning two displays; fixed by the vendor in a later build.',
+      workaround: [
+        'As a temporary measure, share from a single monitor (Win+P → PC screen only) and then share.'
+      ],
+      permanentFix: 'Update Teams to build 24295.605.3220.1461 or later — verified fixed on 12 pilot machines.',
+      linkedTickets: ['INC-4299'],
+      tags: ['teams', 'screen-share', 'crash']
+    }
+  ];
+}
+
+/** Next free KE id, e.g. 'KE-0007'. */
+function nextId(records) {
+  const nums = records.map(r => {
+    const m = /^KE-(\d+)$/.exec(r.id || '');
+    return m ? parseInt(m[1], 10) : 0;
+  });
+  return 'KE-' + String(Math.max(0, ...nums) + 1).padStart(4, '0');
+}
+
+/** Validate a record; returns an array of human-readable problems (empty = valid). */
+function validateRecord(rec) {
+  const errs = [];
+  if (!rec || typeof rec !== 'object') return ['Record must be an object.'];
+  if (!rec.title || !String(rec.title).trim()) errs.push('Title is required.');
+  if (!CATEGORIES.includes(rec.category)) errs.push('Category must be one of: ' + CATEGORIES.join(', ') + '.');
+  if (!SEVERITIES.includes(rec.severity)) errs.push('Severity must be one of: ' + SEVERITIES.join(', ') + '.');
+  if (!STATUSES.includes(rec.status)) errs.push('Status must be one of: ' + STATUSES.join(', ') + '.');
+  if (!rec.symptoms || !String(rec.symptoms).trim()) errs.push('Symptoms are required.');
+  const steps = Array.isArray(rec.workaround) ? rec.workaround.filter(s => s && String(s).trim()) : [];
+  if (steps.length === 0) errs.push('At least one workaround step is required.');
+  if (rec.reportedCount != null && (!Number.isInteger(rec.reportedCount) || rec.reportedCount < 0))
+    errs.push('Times reported must be a non-negative whole number.');
+  return errs;
+}
+
+/** One lowercased haystack string covering every searchable field of a record. */
+function haystack(rec) {
+  return [
+    rec.id, rec.title, rec.symptoms, rec.errorText, rec.rootCause, rec.permanentFix,
+    (rec.workaround || []).join('\n'),
+    (rec.tags || []).join(' '),
+    (rec.linkedTickets || []).join(' ')
+  ].filter(Boolean).join('\n').toLowerCase();
+}
+
+/** Full-text search across title, symptoms, error text, workaround, tags, tickets. */
+function searchRecords(records, query) {
+  const q = String(query || '').trim().toLowerCase();
+  if (!q) return records.slice();
+  return records.filter(r => haystack(r).includes(q));
+}
+
+/** Exact-match filters; 'all' (or missing) means no filtering on that axis. */
+function filterRecords(records, opts) {
+  const o = opts || {};
+  const category = o.category || 'all', severity = o.severity || 'all', status = o.status || 'all';
+  return records.filter(r =>
+    (category === 'all' || r.category === category) &&
+    (severity === 'all' || r.severity === severity) &&
+    (status === 'all' || r.status === status));
+}
+
+/** Sort a copy of the records: 'updated' (default), 'severity' (P1 first), 'reported'. */
+function sortRecords(records, key) {
+  const arr = records.slice();
+  if (key === 'severity') {
+    arr.sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] || b.reportedCount - a.reportedCount);
+  } else if (key === 'reported') {
+    arr.sort((a, b) => b.reportedCount - a.reportedCount);
+  } else {
+    arr.sort((a, b) => String(b.lastUpdated).localeCompare(String(a.lastUpdated)));
+  }
+  return arr;
+}
+
+/** Dashboard counts by status. */
+function stats(records) {
+  return {
+    total: records.length,
+    workaround: records.filter(r => r.status === 'Workaround available').length,
+    inProgress: records.filter(r => r.status === 'Fix in progress').length,
+    resolved: records.filter(r => r.status === 'Resolved permanently').length
+  };
+}
+
+/** Serialize the database for download / sharing. */
+function exportJSON(records) {
+  return JSON.stringify({ app: 'kedb', version: 1, exported: todayISO(), records: records }, null, 2);
+}
+
+/**
+ * Parse an import payload. Accepts either a bare array or { records: [...] }.
+ * Throws a human-readable Error on malformed JSON or invalid records.
+ */
+function importJSON(text) {
+  let obj;
+  try {
+    obj = JSON.parse(text);
+  } catch (e) {
+    throw new Error('Not valid JSON: ' + e.message);
+  }
+  const recs = Array.isArray(obj) ? obj : obj.records;
+  if (!Array.isArray(recs)) throw new Error('Expected a JSON array, or an object like {"records": [...]}.');
+  const bad = [];
+  recs.forEach((r, i) => {
+    const errs = validateRecord(r);
+    if (errs.length) bad.push('record ' + (i + 1) + ' (' + (r && r.id || '?') + '): ' + errs[0]);
+  });
+  if (bad.length) throw new Error('Invalid record(s): ' + bad.slice(0, 3).join('; ') + (bad.length > 3 ? ' …' : ''));
+  // Normalize optional fields so the UI can rely on their shape.
+  return recs.map(r => ({
+    id: r.id, title: String(r.title).trim(), category: r.category, severity: r.severity, status: r.status,
+    reportedCount: r.reportedCount || 0, lastUpdated: r.lastUpdated || todayISO(),
+    symptoms: String(r.symptoms).trim(), errorText: r.errorText || '', rootCause: r.rootCause || '',
+    workaround: r.workaround.map(s => String(s).trim()).filter(Boolean),
+    permanentFix: r.permanentFix || '',
+    linkedTickets: r.linkedTickets || [], tags: r.tags || []
+  }));
+}
+
+/** Escape a string for safe insertion into HTML (prevents XSS from record text). */
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// Export the pure surface for unit tests (and for the UI script below).
+globalThis.__kedbLogic = {
+  CATEGORIES, SEVERITIES, SEVERITY_LABEL, SEVERITY_RANK, STATUSES,
+  todayISO, seedRecords, nextId, validateRecord,
+  searchRecords, filterRecords, sortRecords, stats,
+  exportJSON, importJSON, escapeHtml
+};
+</script>
+
+<script>
+/* =====================================================================
+ * Known Error Database — UI layer.
+ * Runs only in a real browser (needs #recordList in the DOM).
+ * ===================================================================== */
+(function () {
+  if (typeof document === 'undefined' || !document.getElementById('recordList')) return;
+  const L = globalThis.__kedbLogic;
+  const LS_KEY = 'kedb-records-v1';
+
+  // ---- state ---------------------------------------------------------
+  let records = load();
+
+  function load() {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (raw) return L.importJSON(raw);
+    } catch (e) { /* fall through to seeds */ }
+    const seeds = L.seedRecords();
+    save(seeds);
+    return seeds;
+  }
+  function save(recs) {
+    records = recs;
+    try { localStorage.setItem(LS_KEY, L.exportJSON(records)); } catch (e) { /* storage full/blocked */ }
+  }
+
+  // ---- element handles ------------------------------------------------
+  const $ = id => document.getElementById(id);
+  const els = {
+    stats: $('stats'), list: $('recordList'), empty: $('emptyState'),
+    search: $('search'), fCategory: $('fCategory'), fSeverity: $('fSeverity'),
+    fStatus: $('fStatus'), fSort: $('fSort'),
+    detailModal: $('detailModal'), detailBody: $('detailBody'),
+    formModal: $('formModal'), formTitle: $('formTitle'),
+    formErrors: $('formErrors'), formErrorList: $('formErrorList'),
+    fileImport: $('fileImport')
+  };
+  let editingId = null; // null = creating a new record
+
+  // ---- small helpers ---------------------------------------------------
+  function fillSelect(sel, items, allLabel) {
+    sel.innerHTML = '';
+    if (allLabel) {
+      const o = document.createElement('option');
+      o.value = 'all'; o.textContent = allLabel; sel.appendChild(o);
+    }
+    items.forEach(v => {
+      const o = document.createElement('option');
+      o.value = v; o.textContent = allLabel && SEVERITY_LABEL[v] ? v + ' — ' + SEVERITY_LABEL[v] : v;
+      sel.appendChild(o);
+    });
+  }
+  function sevBadge(sev) {
+    return '<span class="badge sev-' + sev + '">' + sev + ' ' + L.escapeHtml(L.SEVERITY_LABEL[sev]) + '</span>';
+  }
+  function statusBadge(st) {
+    const cls = st === 'Workaround available' ? 'st-work' : st === 'Fix in progress' ? 'st-fix' : 'st-done';
+    return '<span class="badge ' + cls + '">' + L.escapeHtml(st) + '</span>';
+  }
+  function snippet(s, n) {
+    s = String(s || '');
+    return s.length > n ? s.slice(0, n - 1) + '…' : s;
+  }
+  function lines(textarea) {
+    return String(textarea.value).split('\n').map(s => s.trim()).filter(Boolean);
+  }
+  function csv(input) {
+    return String(input.value).split(',').map(s => s.trim()).filter(Boolean);
+  }
+
+  // ---- rendering -------------------------------------------------------
+  function currentView() {
+    const q = els.search.value;
+    const filtered = L.filterRecords(L.searchRecords(records, q), {
+      category: els.fCategory.value, severity: els.fSeverity.value, status: els.fStatus.value
+    });
+    return L.sortRecords(filtered, els.fSort.value);
+  }
+
+  function renderStats() {
+    const s = L.stats(records);
+    els.stats.innerHTML =
+      stat(s.total, 'known errors') +
+      stat(s.workaround, 'with a workaround') +
+      stat(s.inProgress, 'fix in progress') +
+      stat(s.resolved, 'resolved permanently');
+  }
+  function stat(num, lbl) {
+    return '<div class="stat"><div class="num">' + num + '</div><div class="lbl">' + L.escapeHtml(lbl) + '</div></div>';
+  }
+
+  function renderList() {
+    const view = currentView();
+    renderStats();
+    els.empty.hidden = view.length > 0;
+    els.list.innerHTML = view.map(rec =>
+      '<article class="card">' +
+        '<div class="top"><span class="badge id">' + L.escapeHtml(rec.id) + '</span>' +
+        sevBadge(rec.severity) + statusBadge(rec.status) + '</div>' +
+        '<h3>' + L.escapeHtml(rec.title) + '</h3>' +
+        '<p class="sym">' + L.escapeHtml(snippet(rec.symptoms, 140)) + '</p>' +
+        '<div class="actions">' +
+          '<button data-act="view" data-id="' + L.escapeHtml(rec.id) + '">View details</button>' +
+          '<button data-act="edit" data-id="' + L.escapeHtml(rec.id) + '">Edit</button>' +
+          '<button class="danger" data-act="del" data-id="' + L.escapeHtml(rec.id) + '">Delete</button>' +
+        '</div>' +
+        '<div class="meta">' + L.escapeHtml(rec.category) + ' · reported ' + rec.reportedCount + '× · updated ' +
+        L.escapeHtml(rec.lastUpdated) + '</div>' +
+      '</article>').join('');
+  }
+
+  // ---- detail modal -----------------------------------------------------
+  function openDetail(id) {
+    const rec = records.find(r => r.id === id);
+    if (!rec) return;
+    const steps = rec.workaround.map(s => '<li>' + L.escapeHtml(s) + '</li>').join('');
+    const tags = (rec.tags || []).map(t => '<span class="tag">' + L.escapeHtml(t) + '</span>').join('');
+    const tickets = (rec.linkedTickets || []).map(t => '<span class="tag">' + L.escapeHtml(t) + '</span>').join('');
+    els.detailBody.innerHTML =
+      '<h2>' + L.escapeHtml(rec.title) + '</h2>' +
+      '<div class="badges"><span class="badge id">' + L.escapeHtml(rec.id) + '</span>' +
+      sevBadge(rec.severity) + statusBadge(rec.status) + '</div>' +
+      '<div class="kv"><b>Category:</b> ' + L.escapeHtml(rec.category) +
+      ' &nbsp;·&nbsp; <b>Reported:</b> ' + rec.reportedCount + '×' +
+      ' &nbsp;·&nbsp; <b>Updated:</b> ' + L.escapeHtml(rec.lastUpdated) + '</div>' +
+      '<h4>Symptoms</h4><p>' + L.escapeHtml(rec.symptoms) + '</p>' +
+      (rec.errorText ? '<h4>Error message / code</h4><p><code>' + L.escapeHtml(rec.errorText) + '</code></p>' : '') +
+      (rec.rootCause ? '<h4>Root cause</h4><p>' + L.escapeHtml(rec.rootCause) + '</p>' : '') +
+      '<h4>Workaround</h4><ol>' + steps + '</ol>' +
+      (rec.permanentFix ? '<h4>Permanent fix</h4><p>' + L.escapeHtml(rec.permanentFix) + '</p>' : '') +
+      (tickets ? '<h4>Linked tickets</h4><p>' + tickets + '</p>' : '') +
+      (tags ? '<h4>Tags</h4><p>' + tags + '</p>' : '') +
+      '<div class="row">' +
+        '<button class="primary" id="btnCopyWa">Copy workaround</button>' +
+        '<button id="btnEditFromDetail">Edit record</button>' +
+        '<button id="btnCloseDetail">Close</button>' +
+      '</div>';
+    els.detailModal.classList.add('open');
+    $('btnCloseDetail').onclick = () => els.detailModal.classList.remove('open');
+    $('btnEditFromDetail').onclick = () => { els.detailModal.classList.remove('open'); openForm(rec.id); };
+    $('btnCopyWa').onclick = () => {
+      const text = rec.id + ' — ' + rec.title + '\n\nWorkaround:\n' +
+        rec.workaround.map((s, i) => (i + 1) + '. ' + s).join('\n');
+      copyText(text, $('btnCopyWa'));
+    };
+  }
+
+  function copyText(text, btn) {
+    const done = () => { btn.textContent = 'Copied ✓'; setTimeout(() => { btn.textContent = 'Copy workaround'; }, 1500); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, () => fallbackCopy(text, done));
+    } else fallbackCopy(text, done);
+  }
+  function fallbackCopy(text, done) {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); done(); } catch (e) { /* clipboard unavailable */ }
+    document.body.removeChild(ta);
+  }
+
+  // ---- add / edit form ---------------------------------------------------
+  function openForm(id) {
+    editingId = id || null;
+    const rec = id ? records.find(r => r.id === id) : null;
+    els.formTitle.textContent = rec ? 'Edit ' + rec.id : 'New known-error record';
+    els.formErrors.classList.remove('show');
+    $('inTitle').value = rec ? rec.title : '';
+    $('inCategory').value = rec ? rec.category : L.CATEGORIES[0];
+    $('inSeverity').value = rec ? rec.severity : 'P3';
+    $('inStatus').value = rec ? rec.status : L.STATUSES[0];
+    $('inReported').value = rec ? rec.reportedCount : 1;
+    $('inSymptoms').value = rec ? rec.symptoms : '';
+    $('inErrorText').value = rec ? rec.errorText : '';
+    $('inRootCause').value = rec ? rec.rootCause : '';
+    $('inWorkaround').value = rec ? rec.workaround.join('\n') : '';
+    $('inFix').value = rec ? rec.permanentFix : '';
+    $('inTickets').value = rec ? (rec.linkedTickets || []).join(', ') : '';
+    $('inTags').value = rec ? (rec.tags || []).join(', ') : '';
+    els.formModal.classList.add('open');
+    $('inTitle').focus();
+  }
+
+  function saveForm() {
+    const rec = {
+      id: editingId || L.nextId(records),
+      title: $('inTitle').value.trim(),
+      category: $('inCategory').value,
+      severity: $('inSeverity').value,
+      status: $('inStatus').value,
+      reportedCount: Math.max(0, parseInt($('inReported').value, 10) || 0),
+      lastUpdated: L.todayISO(),
+      symptoms: $('inSymptoms').value.trim(),
+      errorText: $('inErrorText').value.trim(),
+      rootCause: $('inRootCause').value.trim(),
+      workaround: lines($('inWorkaround')),
+      permanentFix: $('inFix').value.trim(),
+      linkedTickets: csv($('inTickets')),
+      tags: csv($('inTags'))
+    };
+    const errs = L.validateRecord(rec);
+    if (errs.length) {
+      els.formErrorList.innerHTML = errs.map(e => '<li>' + L.escapeHtml(e) + '</li>').join('');
+      els.formErrors.classList.add('show');
+      return;
+    }
+    const next = records.slice();
+    const i = next.findIndex(r => r.id === rec.id);
+    if (i >= 0) next[i] = rec; else next.push(rec);
+    save(next);
+    els.formModal.classList.remove('open');
+    renderList();
+  }
+
+  // ---- wiring -------------------------------------------------------------
+  fillSelect(els.fCategory, L.CATEGORIES, 'All categories');
+  fillSelect(els.fSeverity, L.SEVERITIES, 'All severities');
+  fillSelect(els.fStatus, L.STATUSES, 'All statuses');
+  fillSelect($('inCategory'), L.CATEGORIES);
+  fillSelect($('inSeverity'), L.SEVERITIES);
+  fillSelect($('inStatus'), L.STATUSES);
+
+  ['search', 'fCategory', 'fSeverity', 'fStatus', 'fSort'].forEach(id => {
+    $(id).addEventListener(id === 'search' ? 'input' : 'change', renderList);
+  });
+
+  els.list.addEventListener('click', e => {
+    const btn = e.target.closest('button[data-act]');
+    if (!btn) return;
+    const id = btn.getAttribute('data-id');
+    const act = btn.getAttribute('data-act');
+    if (act === 'view') openDetail(id);
+    else if (act === 'edit') openForm(id);
+    else if (act === 'del') {
+      const rec = records.find(r => r.id === id);
+      if (rec && confirm('Delete ' + rec.id + ' — "' + rec.title + '"?')) {
+        save(records.filter(r => r.id !== id));
+        renderList();
+      }
+    }
+  });
+
+  $('btnNew').onclick = () => openForm(null);
+  $('btnSave').onclick = saveForm;
+  $('btnCancel').onclick = () => els.formModal.classList.remove('open');
+  [els.detailModal, els.formModal].forEach(m =>
+    m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); }));
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') [els.detailModal, els.formModal].forEach(m => m.classList.remove('open'));
+  });
+
+  $('btnExport').onclick = () => {
+    const blob = new Blob([L.exportJSON(records)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'kedb-export-' + L.todayISO() + '.json';
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  };
+  $('btnImport').onclick = () => els.fileImport.click();
+  els.fileImport.addEventListener('change', () => {
+    const file = els.fileImport.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const recs = L.importJSON(reader.result);
+        if (confirm('Import ' + recs.length + ' record(s)? This replaces the current database.')) {
+          save(recs);
+          renderList();
+        }
+      } catch (e) {
+        alert('Import failed: ' + e.message);
+      }
+      els.fileImport.value = '';
+    };
+    reader.readAsText(file);
+  });
+  $('btnReset').onclick = () => {
+    if (confirm('Discard all changes and restore the built-in sample data?')) {
+      save(L.seedRecords());
+      renderList();
+    }
+  };
+
+  renderList();
+})();
+</script>
+</body>
+</html>
