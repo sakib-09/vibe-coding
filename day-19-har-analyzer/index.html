@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LoadLine — HAR File Analyzer</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --ink: #1f2937; --muted: #6b7280;
+    --line: #e5e7eb; --accent: #2563eb;
+    --ok: #16a34a; --warn: #d97706; --err: #dc2626; --info: #2563eb;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg); color: var(--ink); line-height: 1.5;
+  }
+  header.top { max-width: 1080px; margin: 0 auto; padding: 32px 20px 8px; }
+  header.top h1 { margin: 0; font-size: 2rem; letter-spacing: -0.5px; }
+  header.top h1 .tag {
+    font-size: 1rem; font-weight: 600; color: var(--accent);
+    border: 2px solid var(--accent); border-radius: 999px;
+    padding: 2px 12px; margin-left: 10px; vertical-align: middle; white-space: nowrap;
+  }
+  .lede { color: var(--muted); max-width: 720px; margin: 10px 0 0; }
+  main { max-width: 1080px; margin: 0 auto; padding: 16px 20px 60px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 20px; margin: 16px 0; box-shadow: 0 1px 3px rgba(0,0,0,.04);
+  }
+  .card h2 { margin: 0 0 12px; font-size: 1.15rem; }
+  #dropZone {
+    border: 2px dashed #c7d2fe; border-radius: 12px; padding: 36px 20px;
+    text-align: center; background: #eef2ff; transition: background .15s, border-color .15s;
+  }
+  #dropZone.dragover { background: #e0e7ff; border-color: var(--accent); }
+  .btnrow { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+  button {
+    font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--accent);
+    background: var(--accent); color: #fff; padding: 9px 18px; font-weight: 600;
+  }
+  button.ghost { background: #fff; color: var(--accent); }
+  button:hover { filter: brightness(.95); }
+  .hint { color: var(--muted); font-size: .9rem; margin: 12px 0 0; }
+  .status { font-size: .95rem; margin: 10px 0 0; min-height: 1.4em; }
+  .status.error { color: var(--err); font-weight: 600; }
+  .status.ok { color: var(--ok); font-weight: 600; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .stat {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 14px 16px;
+  }
+  .stat .num { font-size: 1.6rem; font-weight: 700; }
+  .stat .lbl { color: var(--muted); font-size: .85rem; }
+  .stat.bad .num { color: var(--err); }
+  .stat.warn .num { color: var(--warn); }
+
+  ul.insights { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  ul.insights li {
+    border: 1px solid var(--line); border-left: 5px solid var(--info);
+    border-radius: 8px; padding: 10px 14px; background: #fff;
+  }
+  ul.insights li.error { border-left-color: var(--err); }
+  ul.insights li.warn { border-left-color: var(--warn); }
+  ul.insights li.info { border-left-color: var(--info); }
+  ul.insights .sev {
+    display: inline-block; font-size: .72rem; font-weight: 700; letter-spacing: .5px;
+    text-transform: uppercase; border-radius: 4px; padding: 2px 8px; margin-right: 8px; color: #fff;
+  }
+  ul.insights li.error .sev { background: var(--err); }
+  ul.insights li.warn .sev { background: var(--warn); }
+  ul.insights li.info .sev { background: var(--info); }
+  ul.insights .title { font-weight: 700; }
+  ul.insights .detail { color: var(--muted); font-size: .92rem; margin-top: 4px; }
+  ul.insights .detail code { color: var(--ink); }
+
+  .tabs { display: flex; gap: 6px; margin: 16px 0 0; }
+  .tab {
+    background: #fff; color: var(--ink); border: 1px solid var(--line);
+    border-bottom: none; border-radius: 10px 10px 0 0; padding: 10px 22px;
+  }
+  .tab.active { background: var(--card); color: var(--accent); font-weight: 700; border-color: var(--accent); border-bottom: 2px solid var(--card); }
+  .tabs + .card { margin-top: 0; border-top-left-radius: 0; }
+
+  .wf-row {
+    display: grid; grid-template-columns: minmax(0, 340px) 1fr 90px;
+    gap: 12px; align-items: center; padding: 5px 0; border-bottom: 1px solid #f1f5f9;
+    font-size: .85rem;
+  }
+  .wf-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wf-track { position: relative; height: 16px; background: #f1f5f9; border-radius: 4px; }
+  .wf-bar { position: absolute; top: 0; height: 100%; border-radius: 4px; min-width: 3px; opacity: .85; }
+  .wf-ms { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: .82rem; color: var(--muted); margin-top: 12px; }
+  .legend .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+
+  #reqSearch {
+    width: 100%; font: inherit; padding: 9px 12px; border: 1px solid var(--line);
+    border-radius: 8px; margin-bottom: 12px;
+  }
+  table.reqs { width: 100%; border-collapse: collapse; font-size: .88rem; }
+  table.reqs th, table.reqs td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  table.reqs th { color: var(--muted); font-weight: 600; font-size: .78rem; text-transform: uppercase; letter-spacing: .4px; }
+  table.reqs tbody tr { cursor: pointer; }
+  table.reqs tbody tr:hover { background: #f8fafc; }
+  table.reqs td.url { max-width: 380px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+  .badge {
+    display: inline-block; font-size: .72rem; font-weight: 700; border-radius: 5px;
+    padding: 2px 8px; color: #fff; letter-spacing: .3px;
+  }
+  .m-GET { background: #3b82f6; } .m-POST { background: #16a34a; }
+  .m-PUT { background: #d97706; } .m-DELETE { background: #dc2626; }
+  .m-PATCH { background: #8b5cf6; } .m-OTHER { background: #6b7280; }
+  .s-2xx { background: #16a34a; } .s-3xx { background: #d97706; }
+  .s-4xx, .s-5xx { background: #dc2626; } .s-0xx { background: #6b7280; }
+
+  .detail { margin-top: 18px; border: 1px solid var(--line); border-radius: 10px; padding: 16px; background: #fbfdff; }
+  .detail h3 { margin: 0 0 8px; font-size: 1rem; word-break: break-all; }
+  .detail .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 700px) { .detail .cols { grid-template-columns: 1fr; } .wf-row { grid-template-columns: minmax(0, 200px) 1fr 70px; } }
+  .detail h4 { margin: 12px 0 6px; font-size: .85rem; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); }
+  .hdrs { font-size: .8rem; max-height: 220px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
+  .hdrs table { width: 100%; border-collapse: collapse; }
+  .hdrs td { padding: 5px 8px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+  .hdrs td:first-child { font-weight: 600; white-space: nowrap; color: #374151; }
+  .hdrs td:last-child { word-break: break-all; }
+  .timings { margin-top: 6px; }
+  .t-row { display: grid; grid-template-columns: 90px 1fr 70px; gap: 8px; align-items: center; font-size: .8rem; margin: 3px 0; }
+  .t-track { height: 12px; background: #f1f5f9; border-radius: 3px; position: relative; }
+  .t-bar { position: absolute; top: 0; height: 100%; border-radius: 3px; background: var(--accent); min-width: 2px; }
+  .t-row span:last-child { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  footer { text-align: center; color: var(--muted); font-size: .85rem; padding: 24px; }
+  .empty { color: var(--muted); font-style: italic; }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>LoadLine <span class="tag">HAR File Analyzer</span></h1>
+  <p class="lede">App support teams ask for HAR files every day — a recording of every
+  network request the browser made while loading a page. This turns one into
+  answers: what failed, what was slow, and what to tell the user.</p>
+</header>
+
+<main>
+  <section class="card" id="inputCard">
+    <div id="dropZone" tabindex="0" role="button" aria-label="Drop a HAR file here or choose one">
+      <p><strong>Drop a <code>.har</code> file here</strong>, or pick one from disk.</p>
+      <div class="btnrow" style="justify-content:center">
+        <button id="fileBtn" type="button">Choose file</button>
+        <input type="file" id="fileInput" accept=".har,.json,application/json" hidden>
+        <button id="sampleBtn" type="button" class="ghost">Load sample HAR</button>
+      </div>
+      <p class="hint">100% client-side — the file never leaves your browser. No upload, no server.</p>
+      <p id="fileStatus" class="status" aria-live="polite"></p>
+    </div>
+  </section>
+
+  <section id="results" hidden>
+    <div id="summaryCards" class="cards"></div>
+
+    <section class="card">
+      <h2>Insights</h2>
+      <ul id="insightsList" class="insights"></ul>
+    </section>
+
+    <div class="tabs" role="tablist">
+      <button id="tabWaterfall" type="button" class="tab active" role="tab">Waterfall</button>
+      <button id="tabRequests" type="button" class="tab" role="tab">Requests</button>
+    </div>
+
+    <section id="waterfallView" class="card" role="tabpanel">
+      <div id="wfRows"></div>
+      <div class="legend" id="wfLegend"></div>
+    </section>
+
+    <section id="requestsView" class="card" role="tabpanel" hidden>
+      <input id="reqSearch" type="search" placeholder="Search method, status, or URL…" aria-label="Search requests">
+      <table class="reqs">
+        <thead><tr>
+          <th>Method</th><th>Status</th><th>URL</th><th>Type</th>
+          <th class="num">Size</th><th class="num">Time</th>
+        </tr></thead>
+        <tbody id="reqTableBody"></tbody>
+      </table>
+      <div id="detailPanel" class="detail" hidden></div>
+    </section>
+
+    <div class="btnrow">
+      <button id="copyBtn" type="button">Copy text summary</button>
+      <button id="jsonBtn" type="button" class="ghost">Download JSON report</button>
+      <button id="csvBtn" type="button" class="ghost">Download CSV</button>
+    </div>
+  </section>
+</main>
+
+<footer>
+  LoadLine — read a HAR file like a support engineer: failures, slowness, and the one line that matters for the ticket.
+</footer>
+
+<script>
+'use strict';
+/* ============================================================
+ * LoadLine — pure logic layer (no DOM, no browser APIs).
+ *
+ * A HAR (HTTP Archive) file is JSON that records every network
+ * request a browser made while loading a page. Browsers export it
+ * from DevTools ("Save all as HAR"), and support teams ask users
+ * for it because it shows exactly what failed or was slow.
+ *
+ * Every function here is pure: same input -> same output, no
+ * side effects. Exported as globalThis.__llaLogic so the UI layer
+ * (next script block) and the Node unit tests can use it.
+ * ============================================================ */
+
+/* Parse a URL without the URL class (keeps the logic vm-safe).
+ * Returns { protocol, host, path } where path includes the query string. */
+function parseUrl(u) {
+  if (typeof u !== 'string') u = '';
+  var m = u.match(/^([a-zA-Z][a-zA-Z0-9+.-]*):\/\/([^\/?#]*)([^#]*)/);
+  if (!m) return { protocol: '', host: '', path: u || '/' };
+  var host = m[2].split(':')[0].toLowerCase(); // strip :port
+  var path = m[3] || '/';
+  return { protocol: m[1].toLowerCase(), host: host, path: path };
+}
+
+/* HAR headers are [{name, value}, ...]; fold them into a
+ * lowercase-name -> value map for easy lookups. */
+function headerMap(headers) {
+  var map = {};
+  (headers || []).forEach(function (h) {
+    if (!h || typeof h.name !== 'string') return;
+    var k = h.name.toLowerCase();
+    map[k] = (k in map ? map[k] + ', ' : '') + String(h.value == null ? '' : h.value);
+  });
+  return map;
+}
+
+function extOf(path) {
+  var m = (path || '').toLowerCase().match(/\.([a-z0-9]+)(?:[?#]|$)/);
+  return m ? m[1] : '';
+}
+
+/* Classify a summarized entry into one of the bucket names used by summarize(). */
+function typeOf(s) {
+  var rt = (s.resourceType || '').toLowerCase();
+  if (rt) {
+    if (rt === 'document') return 'doc';
+    if (rt === 'stylesheet') return 'css';
+    if (rt === 'script') return 'js';
+    if (rt === 'image') return 'img';
+    if (rt === 'xhr' || rt === 'fetch') return 'xhr';
+    return 'other';
+  }
+  var m = (s.mime || '').toLowerCase();
+  if (m.indexOf('html') !== -1) return 'doc';
+  if (m.indexOf('css') !== -1) return 'css';
+  if (m.indexOf('javascript') !== -1 || m.indexOf('ecmascript') !== -1) return 'js';
+  if (m.indexOf('image/') === 0) return 'img';
+  if (m.indexOf('json') !== -1 || m.indexOf('xml') !== -1) return 'xhr';
+  return 'other';
+}
+
+/* HAR means "unknown / not applicable" with -1 in timings, sizes, and
+ * sometimes status. Normalize those to 0 so math downstream is safe. */
+function nonNeg(n) { return (typeof n === 'number' && n >= 0) ? n : 0; }
+
+/* Flatten one raw HAR entry into the shape the rest of the app uses. */
+function entrySummary(entry) {
+  var e = entry || {};
+  var req = e.request || {};
+  var res = e.response || {};
+  var content = res.content || {};
+  var t = e.timings || {};
+  var parsed = parseUrl(req.url || '');
+
+  var sizeBytes = 0;
+  if (typeof content.size === 'number' && content.size >= 0) sizeBytes = content.size;
+  else if (typeof res.bodySize === 'number' && res.bodySize >= 0) sizeBytes = res.bodySize;
+
+  var startMs = Date.parse(e.startedDateTime);
+  if (isNaN(startMs)) startMs = 0;
+
+  return {
+    method: String(req.method || 'GET').toUpperCase(),
+    url: req.url || '',
+    host: parsed.host,
+    path: parsed.path,
+    protocol: parsed.protocol,
+    status: (typeof res.status === 'number') ? res.status : 0, // 0 = blocked/failed
+    statusText: res.statusText || '',
+    mime: content.mimeType || '',
+    sizeBytes: sizeBytes,
+    timeMs: nonNeg(e.time),
+    startMs: startMs,
+    timings: {
+      blocked: nonNeg(t.blocked), dns: nonNeg(t.dns), ssl: nonNeg(t.ssl),
+      connect: nonNeg(t.connect), send: nonNeg(t.send),
+      wait: nonNeg(t.wait), receive: nonNeg(t.receive)
+    },
+    redirectURL: res.redirectURL || '',
+    resourceType: e._resourceType || '',
+    reqHeaders: Array.isArray(req.headers) ? req.headers : [],
+    resHeaders: Array.isArray(res.headers) ? res.headers : []
+  };
+}
+
+/* Parse HAR JSON text. Tolerates:
+ *   - a real HAR file:            { log: { pages: [...], entries: [...] } }
+ *   - a bare log wrapper:         { log: { entries: [...] } }
+ *   - a raw entries array:        [ {request...}, ... ]  (some tools export this) */
+function parseHar(text) {
+  var data;
+  try {
+    data = JSON.parse(text);
+  } catch (err) {
+    return { ok: false, error: 'That is not valid JSON — is this really a .har file?' };
+  }
+  var entries = null;
+  var pages = [];
+  if (data && data.log && Array.isArray(data.log.entries)) {
+    entries = data.log.entries;
+    if (Array.isArray(data.log.pages)) pages = data.log.pages;
+  } else if (Array.isArray(data)) {
+    entries = data;
+  }
+  if (!entries) {
+    return { ok: false, error: 'No HAR log.entries found — this file does not look like a HAR archive.' };
+  }
+  return { ok: true, pages: pages, entries: entries };
+}
+
+/* Waterfall geometry: each request positioned relative to the earliest
+ * request start, so the UI can draw pure-CSS bars with left/width %. */
+function buildWaterfall(entries) {
+  var sums = entries.map(entrySummary);
+  if (sums.length === 0) return [];
+  var t0 = Math.min.apply(null, sums.map(function (s) { return s.startMs; }));
+  return sums.map(function (s, i) {
+    return {
+      i: i,
+      startOffsetMs: s.startMs - t0,
+      endOffsetMs: (s.startMs - t0) + s.timeMs
+    };
+  });
+}
+
+/* Roll a list of raw entries up into the headline numbers. */
+function summarize(entries, pageTitle) {
+  var sums = entries.map(entrySummary);
+  var out = {
+    pageTitle: pageTitle || 'HAR page',
+    count: sums.length,
+    failed: 0,
+    slow: 0,
+    totalBytes: 0,
+    totalMs: 0,
+    slowest: { url: '', ms: 0 },
+    largest: { url: '', bytes: 0 },
+    byType: { js: 0, css: 0, img: 0, xhr: 0, doc: 0, other: 0 }
+  };
+  if (sums.length === 0) return out;
+  var t0 = Infinity, t1 = -Infinity;
+  sums.forEach(function (s) {
+    if (s.status === 0 || s.status >= 400) out.failed++;
+    if (s.timeMs > 2000) out.slow++;
+    out.totalBytes += s.sizeBytes;
+    if (s.startMs < t0) t0 = s.startMs;
+    if (s.startMs + s.timeMs > t1) t1 = s.startMs + s.timeMs;
+    if (s.timeMs > out.slowest.ms) out.slowest = { url: s.url, ms: s.timeMs };
+    if (s.sizeBytes > out.largest.bytes) out.largest = { url: s.url, bytes: s.sizeBytes };
+    var ty = typeOf(s);
+    out.byType[ty] = (out.byType[ty] || 0) + 1;
+  });
+  out.totalMs = (t1 > t0) ? (t1 - t0) : 0;
+  return out;
+}
+
+/* --- insight detectors (plain-language, support-desk tone) --- */
+var STATIC_EXTS = { js: 1, css: 1, png: 1, jpg: 1, jpeg: 1, gif: 1, svg: 1, webp: 1, woff: 1, woff2: 1, ttf: 1, ico: 1 };
+
+function hasCacheHeaders(s) {
+  var hm = headerMap(s.resHeaders);
+  return ('cache-control' in hm) || ('etag' in hm) || ('last-modified' in hm);
+}
+function isCompressed(s) {
+  var hm = headerMap(s.resHeaders);
+  var enc = (hm['content-encoding'] || '').toLowerCase();
+  return enc.indexOf('gzip') !== -1 || enc.indexOf('br') !== -1 || enc.indexOf('deflate') !== -1;
+}
+function isTextMime(mime) {
+  var m = (mime || '').toLowerCase();
+  return m.indexOf('html') !== -1 || m.indexOf('css') !== -1 ||
+         m.indexOf('javascript') !== -1 || m.indexOf('ecmascript') !== -1 ||
+         m.indexOf('json') !== -1;
+}
+function shortUrl(s) {
+  var u = s.host + s.path;
+  return u.length > 70 ? u.slice(0, 67) + '…' : u;
+}
+
+function findFailed(sums) {
+  return sums.filter(function (s) { return s.status === 0 || s.status >= 400; })
+    .map(function (s) {
+      var detail = s.status === 0
+        ? 'The browser never got a response — blocked, aborted, or a network failure before the server answered. Ask the user if an ad-blocker, VPN, or corporate proxy could be in the way.'
+        : 'The server answered ' + s.status + ' ' + s.statusText + '. If the user reports broken pages or failed actions, this endpoint is the place to look — check the server-side logs for this URL.';
+      return {
+        severity: 'error',
+        title: 'Failed request — ' + s.method + ' ' + shortUrl(s),
+        detail: detail
+      };
+    });
+}
+
+function findMixedContent(sums, pageUrl) {
+  if ((pageUrl || '').toLowerCase().indexOf('https:') !== 0) return [];
+  return sums.filter(function (s) { return s.protocol === 'http'; })
+    .map(function (s) {
+      return {
+        severity: 'error',
+        title: 'Mixed content — insecure resource on a secure page',
+        detail: s.method + ' ' + shortUrl(s) + ' loads over plain http:// while the page itself is https://. Browsers block or warn on this, so the resource may silently fail for users. Serve it over https:// instead.'
+      };
+    });
+}
+
+function findSlow(sums) {
+  return sums.filter(function (s) { return s.timeMs > 2000; })
+    .map(function (s) {
+      return {
+        severity: 'warn',
+        title: 'Slow request — ' + formatMs(s.timeMs) + ' for ' + shortUrl(s),
+        detail: 'Anything over 2 s hurts the page. The timing breakdown shows where the time went (waiting on the server vs. downloading). If "wait" dominates, the backend is the bottleneck.'
+      };
+    });
+}
+
+function findHuge(sums) {
+  return sums.filter(function (s) { return s.sizeBytes > 1024 * 1024; })
+    .map(function (s) {
+      return {
+        severity: 'warn',
+        title: 'Large download — ' + formatBytes(s.sizeBytes) + ' for ' + shortUrl(s),
+        detail: 'Single responses over 1 MB are expensive on mobile data and slow connections. Compress, resize, or lazy-load this asset.'
+      };
+    });
+}
+
+function findDuplicates(sums) {
+  var groups = {};
+  sums.forEach(function (s) {
+    var k = s.method + ' ' + s.url;
+    (groups[k] = groups[k] || []).push(s);
+  });
+  var out = [];
+  Object.keys(groups).forEach(function (k) {
+    var g = groups[k];
+    if (g.length >= 2) {
+      var wasted = g.slice(1).reduce(function (a, s) { return a + s.sizeBytes; }, 0);
+      out.push({
+        severity: 'info',
+        title: 'Duplicate requests — ' + g[0].method + ' ' + shortUrl(g[0]) + ' fetched ' + g.length + '×',
+        detail: 'The exact same request went out ' + g.length + ' times (' + formatBytes(wasted) + ' of repeat downloads). Often a component re-rendering or double-fired event — worth a look in QA.'
+      });
+    }
+  });
+  return out;
+}
+
+function findUncachedStatic(sums) {
+  var bad = sums.filter(function (s) {
+    return STATIC_EXTS[extOf(s.path)] && !hasCacheHeaders(s);
+  });
+  if (bad.length === 0) return [];
+  return [{
+    severity: 'warn',
+    title: bad.length + ' static asset' + (bad.length > 1 ? 's' : '') + ' with no cache headers',
+    detail: 'These files are re-downloaded on every visit: ' +
+      bad.slice(0, 5).map(function (s) { return s.path; }).join(', ') +
+      (bad.length > 5 ? ', …' : '') +
+      '. Add Cache-Control / ETag headers so repeat visits are instant.'
+  }];
+}
+
+function findUncompressed(sums) {
+  var bad = sums.filter(function (s) {
+    return isTextMime(s.mime) && s.sizeBytes > 50 * 1024 && !isCompressed(s);
+  });
+  if (bad.length === 0) return [];
+  return [{
+    severity: 'info',
+    title: bad.length + ' text asset' + (bad.length > 1 ? 's' : '') + ' sent uncompressed',
+    detail: 'Over 50 KB with no gzip/brotli: ' +
+      bad.slice(0, 5).map(function (s) { return s.path + ' (' + formatBytes(s.sizeBytes) + ')'; }).join(', ') +
+      (bad.length > 5 ? ', …' : '') +
+      '. Enabling compression typically shrinks these by 60–80%.'
+  }];
+}
+
+function findRedirectChains(sums) {
+  var byUrl = {};
+  sums.forEach(function (s) { byUrl[s.url] = s; });
+  var seen = {};
+  var out = [];
+  sums.forEach(function (s) {
+    if (!s.redirectURL) return;
+    var chain = [s.url];
+    var cur = s;
+    var guard = 0;
+    while (cur.redirectURL && byUrl[cur.redirectURL] && guard < 20) {
+      cur = byUrl[cur.redirectURL];
+      chain.push(cur.url);
+      guard++;
+    }
+    var hops = chain.length - 1; // number of redirects to reach the final URL
+    if (hops >= 3 && !seen[chain[chain.length - 1]]) {
+      seen[chain[chain.length - 1]] = true;
+      out.push({
+        severity: 'info',
+        title: 'Heavy redirect chain — ' + hops + ' redirects before ' + shortUrl(cur),
+        detail: 'The browser followed: ' + chain.map(function (u) {
+          var p = parseUrl(u);
+          return p.path;
+        }).join(' → ') + '. Each hop costs a round trip; chains of 3+ are worth trimming in QA.'
+      });
+    }
+  });
+  return out;
+}
+
+/* Run every detector. Errors first, then warnings, then info — so the
+ * scariest stuff is always at the top of the list. */
+function findInsights(entries, pageUrl) {
+  var sums = entries.map(entrySummary);
+  return [].concat(
+    findFailed(sums),
+    findMixedContent(sums, pageUrl),
+    findSlow(sums),
+    findHuge(sums),
+    findUncachedStatic(sums),
+    findDuplicates(sums),
+    findUncompressed(sums),
+    findRedirectChains(sums)
+  );
+}
+
+function formatBytes(n) {
+  n = Math.max(0, n || 0);
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+  if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + ' MB';
+  return (n / 1024 / 1024 / 1024).toFixed(1) + ' GB';
+}
+
+function formatMs(ms) {
+  ms = Math.max(0, ms || 0);
+  if (ms < 1000) return Math.round(ms) + ' ms';
+  if (ms < 60000) return (ms / 1000).toFixed(1) + ' s';
+  var m = Math.floor(ms / 60000);
+  var s = Math.round((ms % 60000) / 1000);
+  return m + 'm ' + s + 's';
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+/* One object holding everything the UI (and the export buttons) needs. */
+function buildAnalysis(entries, pageTitle, pageUrl) {
+  var sums = entries.map(entrySummary);
+  sums.forEach(function (s) { s.type = typeOf(s); });
+  return {
+    pageTitle: pageTitle || 'HAR page',
+    pageUrl: pageUrl || '',
+    entries: sums,
+    summary: summarize(entries, pageTitle),
+    insights: findInsights(entries, pageUrl)
+  };
+}
+
+/* Ticket-ready plain-text summary — paste straight into the ticket. */
+function textSummary(analysis) {
+  var sm = analysis.summary;
+  var lines = [];
+  lines.push('LoadLine — HAR summary');
+  lines.push('Page: ' + analysis.pageTitle);
+  if (analysis.pageUrl) lines.push('URL: ' + analysis.pageUrl);
+  lines.push('');
+  lines.push('Requests: ' + sm.count +
+    ' | Failed: ' + sm.failed +
+    ' | Slow (>2s): ' + sm.slow +
+    ' | Transferred: ' + formatBytes(sm.totalBytes) +
+    ' | Page time: ' + formatMs(sm.totalMs));
+  lines.push('');
+
+  var failed = analysis.entries.filter(function (e) { return e.status === 0 || e.status >= 400; });
+  if (failed.length) {
+    lines.push('Failed requests:');
+    failed.forEach(function (e) {
+      lines.push('  [' + (e.status || 'blocked') + '] ' + e.method + ' ' + e.url + ' (' + formatMs(e.timeMs) + ')');
+    });
+    lines.push('');
+  }
+  var slow = analysis.entries.filter(function (e) { return e.timeMs > 2000; });
+  if (slow.length) {
+    lines.push('Slow requests (>2 s):');
+    slow.forEach(function (e) {
+      lines.push('  [' + e.status + '] ' + e.method + ' ' + e.url + ' — ' + formatMs(e.timeMs));
+    });
+    lines.push('');
+  }
+  if (analysis.insights.length) {
+    lines.push('Top insights:');
+    analysis.insights.slice(0, 8).forEach(function (i) {
+      lines.push('  [' + i.severity.toUpperCase() + '] ' + i.title);
+      lines.push('      ' + i.detail);
+    });
+    lines.push('');
+  }
+  lines.push('What to tell the user: ' + adviceLine(analysis));
+  return lines.join('\n');
+}
+
+function adviceLine(analysis) {
+  var sm = analysis.summary;
+  if (sm.failed > 0) {
+    return sm.failed + ' request(s) failed — the failing endpoints above are the first place to look. ' +
+      'Ask the user to retry in a fresh browser profile (rules out extensions/ad-blockers), then check server-side logs for those URLs.';
+  }
+  if (sm.slow > 0) {
+    return 'Nothing failed, but the page is slow — ' + formatMs(sm.slowest.ms) + ' on the slowest request. ' +
+      'Ask the user if it is slow on other networks/devices too; if yes, the bottleneck is server-side.';
+  }
+  return 'Nothing is failing or unusually slow on the network side — the issue is likely in the page itself (JavaScript errors, rendering). Check the browser console next.';
+}
+
+/* Rows for the downloadable CSV (header row first). */
+function csvRows(analysis) {
+  var rows = [['method', 'status', 'host', 'path', 'type', 'size_bytes', 'time_ms']];
+  analysis.entries.forEach(function (e) {
+    rows.push([e.method, e.status, e.host, e.path, e.type, e.sizeBytes, Math.round(e.timeMs)]);
+  });
+  return rows;
+}
+
+globalThis.__llaLogic = {
+  parseHar: parseHar,
+  entrySummary: entrySummary,
+  buildWaterfall: buildWaterfall,
+  summarize: summarize,
+  findInsights: findInsights,
+  formatBytes: formatBytes,
+  formatMs: formatMs,
+  escapeHtml: escapeHtml,
+  textSummary: textSummary,
+  csvRows: csvRows,
+  buildAnalysis: buildAnalysis,
+  typeOf: typeOf
+};
+</script>
+<script>
+'use strict';
+/* ============================================================
+ * LoadLine — UI layer. Runs only in a real browser page.
+ * Uses the pure logic from the first script block via
+ * globalThis.__llaLogic. All user/file content is rendered
+ * through escapeHtml.
+ * ============================================================ */
+(function () {
+  if (typeof document === 'undefined' || !document.getElementById('dropZone')) return;
+  var L = globalThis.__llaLogic;
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = L.escapeHtml;
+  var state = { analysis: null };
+
+  /* ---------- sample HAR: 16 entries, every insight fires ---------- */
+  var SAMPLE_BASE = Date.UTC(2026, 9, 13, 14, 0, 0);
+  var _tick = 0;
+  function se(o) {
+    _tick += 180;
+    var resH = (o.resH || []).map(function (p) { return { name: p[0], value: p[1] }; });
+    var t = o.timings || { blocked: 2, dns: 5, ssl: 0, connect: 12, send: 3,
+                           wait: Math.max(1, o.ms - 40), receive: 18 };
+    return {
+      startedDateTime: new Date(SAMPLE_BASE + _tick).toISOString(),
+      time: o.ms,
+      request: { method: o.method, url: o.url,
+                 headers: [{ name: 'User-Agent', value: 'LoadLine sample' }] },
+      response: {
+        status: o.status, statusText: o.statusText, headers: resH,
+        content: { size: o.size, mimeType: o.mime },
+        bodySize: o.size, redirectURL: o.redirect || ''
+      },
+      timings: t,
+      _resourceType: o.rt || ''
+    };
+  }
+  function sampleHar() {
+    return JSON.stringify({ log: {
+      pages: [{ id: 'page_1', title: 'Shop — Red Shoes (sample)',
+                startedDateTime: new Date(SAMPLE_BASE).toISOString() }],
+      entries: [
+        se({ method: 'GET', url: 'https://shop.example.com/', status: 200, statusText: 'OK',
+             mime: 'text/html', size: 24576, ms: 210, rt: 'document',
+             resH: [['Cache-Control', 'max-age=60'], ['Content-Encoding', 'gzip']] }),
+        se({ method: 'GET', url: 'https://shop.example.com/app.js', status: 200, statusText: 'OK',
+             mime: 'application/javascript', size: 92160, ms: 340, rt: 'script' }),       // uncompressed + uncached
+        se({ method: 'GET', url: 'https://shop.example.com/styles.css', status: 200, statusText: 'OK',
+             mime: 'text/css', size: 38912, ms: 120, rt: 'stylesheet',
+             resH: [['Cache-Control', 'max-age=86400'], ['Content-Encoding', 'gzip']] }),
+        se({ method: 'GET', url: 'https://shop.example.com/logo.png', status: 200, statusText: 'OK',
+             mime: 'image/png', size: 49152, ms: 95, rt: 'image' }),                        // uncached static
+        se({ method: 'GET', url: 'https://shop.example.com/missing-image.png', status: 404, statusText: 'Not Found',
+             mime: 'text/html', size: 512, ms: 86, rt: 'image' }),                           // failed
+        se({ method: 'POST', url: 'https://shop.example.com/api/checkout', status: 500, statusText: 'Internal Server Error',
+             mime: 'application/json', size: 348, ms: 1230, rt: 'xhr' }),                   // failed
+        se({ method: 'GET', url: 'https://shop.example.com/api/search?q=red+shoes', status: 200, statusText: 'OK',
+             mime: 'application/json', size: 12288, ms: 3400, rt: 'xhr',
+             resH: [['Content-Encoding', 'gzip']] }),                                       // slow
+        se({ method: 'GET', url: 'https://shop.example.com/videos/hero.mp4', status: 200, statusText: 'OK',
+             mime: 'video/mp4', size: 2411725, ms: 1800, rt: 'media' }),                    // > 1 MB
+        se({ method: 'POST', url: 'https://shop.example.com/analytics', status: 204, statusText: 'No Content',
+             mime: 'text/plain', size: 0, ms: 45, rt: 'xhr' }),                             // duplicate 1/2
+        se({ method: 'POST', url: 'https://shop.example.com/analytics', status: 204, statusText: 'No Content',
+             mime: 'text/plain', size: 0, ms: 52, rt: 'xhr' }),                             // duplicate 2/2
+        se({ method: 'GET', url: 'http://cdn.example.com/banner.jpg', status: 200, statusText: 'OK',
+             mime: 'image/jpeg', size: 122880, ms: 230, rt: 'image',
+             resH: [['Cache-Control', 'max-age=3600']] }),                                  // mixed content
+        se({ method: 'GET', url: 'https://shop.example.com/fonts/brand.woff2', status: 200, statusText: 'OK',
+             mime: 'font/woff2', size: 28672, ms: 140, rt: 'font',
+             resH: [['ETag', '"abc123"']] }),
+        se({ method: 'GET', url: 'https://shop.example.com/old-promo', status: 301, statusText: 'Moved Permanently',
+             mime: 'text/html', size: 300, ms: 62, rt: 'other', redirect: 'https://shop.example.com/new-promo' }),
+        se({ method: 'GET', url: 'https://shop.example.com/new-promo', status: 302, statusText: 'Found',
+             mime: 'text/html', size: 310, ms: 58, rt: 'other', redirect: 'https://shop.example.com/deals' }),
+        se({ method: 'GET', url: 'https://shop.example.com/deals', status: 301, statusText: 'Moved Permanently',
+             mime: 'text/html', size: 305, ms: 71, rt: 'other', redirect: 'https://shop.example.com/offers' }),
+        se({ method: 'GET', url: 'https://shop.example.com/offers', status: 200, statusText: 'OK',
+             mime: 'text/html', size: 18300, ms: 190, rt: 'document',
+             resH: [['Cache-Control', 'max-age=300'], ['Content-Encoding', 'gzip']] })
+      ]
+    }});
+  }
+
+  /* ---------- badges ---------- */
+  var METHOD_COLORS = { GET: 'm-GET', POST: 'm-POST', PUT: 'm-PUT', DELETE: 'm-DELETE', PATCH: 'm-PATCH' };
+  function methodBadge(m) {
+    return '<span class="badge ' + (METHOD_COLORS[m] || 'm-OTHER') + '">' + esc(m) + '</span>';
+  }
+  function statusBadge(s) {
+    var cls = s === 0 ? 's-0xx' : s < 300 ? 's-2xx' : s < 400 ? 's-3xx' : s < 500 ? 's-4xx' : 's-5xx';
+    var label = s === 0 ? 'blocked' : String(s);
+    return '<span class="badge ' + cls + '">' + esc(label) + '</span>';
+  }
+  var TYPE_COLORS = { doc: '#3b82f6', js: '#f59e0b', css: '#8b5cf6', img: '#22c55e', xhr: '#f97316', other: '#9ca3af' };
+
+  /* ---------- rendering ---------- */
+  function render(analysis) {
+    state.analysis = analysis;
+    $('results').hidden = false;
+    renderCards(analysis.summary);
+    renderInsights(analysis.insights);
+    renderWaterfall(analysis);
+    renderTable('');
+    $('detailPanel').hidden = true;
+    $('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function renderCards(sm) {
+    var cards = [
+      { n: sm.count, l: 'requests' },
+      { n: L.formatBytes(sm.totalBytes), l: 'transferred' },
+      { n: L.formatMs(sm.totalMs), l: 'page time' },
+      { n: sm.failed, l: 'failed', cls: sm.failed ? 'bad' : '' },
+      { n: sm.slow, l: 'slow (>2s)', cls: sm.slow ? 'warn' : '' }
+    ];
+    $('summaryCards').innerHTML = cards.map(function (c) {
+      return '<div class="stat ' + (c.cls || '') + '"><div class="num">' + esc(String(c.n)) +
+             '</div><div class="lbl">' + esc(c.l) + '</div></div>';
+    }).join('');
+  }
+
+  function renderInsights(insights) {
+    if (!insights.length) {
+      $('insightsList').innerHTML = '<li class="info"><span class="sev">info</span>' +
+        '<span class="title">Nothing to flag.</span>' +
+        '<div class="detail">No failures, slow requests, or caching problems found in this HAR.</div></li>';
+      return;
+    }
+    $('insightsList').innerHTML = insights.map(function (i) {
+      return '<li class="' + i.severity + '"><span class="sev">' + i.severity + '</span>' +
+        '<span class="title">' + esc(i.title) + '</span>' +
+        '<div class="detail">' + esc(i.detail) + '</div></li>';
+    }).join('');
+  }
+
+  function renderWaterfall(analysis) {
+    var wf = L.buildWaterfall(analysis.entries.map(function (e) {
+      return { startedDateTime: new Date(e.startMs).toISOString(), time: e.timeMs };
+    }));
+    var maxEnd = Math.max.apply(null, wf.map(function (w) { return w.endOffsetMs; }).concat([1]));
+    var rows = analysis.entries.map(function (e, i) {
+      var w = wf[i];
+      var left = (w.startOffsetMs / maxEnd * 100).toFixed(2);
+      var width = Math.max(0.4, (e.timeMs / maxEnd * 100)).toFixed(2);
+      var label = e.host + e.path;
+      return '<div class="wf-row">' +
+        '<div class="wf-label" title="' + esc(e.url) + '">' + methodBadge(e.method) + ' ' +
+          statusBadge(e.status) + ' ' + esc(label.length > 52 ? label.slice(0, 49) + '…' : label) + '</div>' +
+        '<div class="wf-track"><div class="wf-bar" style="left:' + left + '%;width:' + width +
+          '%;background:' + TYPE_COLORS[e.type] + '"></div></div>' +
+        '<div class="wf-ms">' + esc(L.formatMs(e.timeMs)) + '</div></div>';
+    }).join('');
+    $('wfRows').innerHTML = rows || '<p class="empty">No requests.</p>';
+    $('wfLegend').innerHTML = Object.keys(TYPE_COLORS).map(function (t) {
+      return '<span><span class="sw" style="background:' + TYPE_COLORS[t] + '"></span>' + t + '</span>';
+    }).join('');
+  }
+
+  function rowHtml(e, i) {
+    var label = e.host + e.path;
+    return '<tr data-i="' + i + '">' +
+      '<td>' + methodBadge(e.method) + '</td>' +
+      '<td>' + statusBadge(e.status) + '</td>' +
+      '<td class="url" title="' + esc(e.url) + '">' + esc(label) + '</td>' +
+      '<td>' + esc(e.type) + '</td>' +
+      '<td class="num">' + esc(L.formatBytes(e.sizeBytes)) + '</td>' +
+      '<td class="num">' + esc(L.formatMs(e.timeMs)) + '</td></tr>';
+  }
+
+  function renderTable(query) {
+    var q = (query || '').toLowerCase();
+    var body = '';
+    state.analysis.entries.forEach(function (e, i) {
+      if (q && (e.method + ' ' + e.status + ' ' + e.url).toLowerCase().indexOf(q) === -1) return;
+      body += rowHtml(e, i);
+    });
+    $('reqTableBody').innerHTML = body || '<tr><td colspan="6" class="empty">No requests match.</td></tr>';
+  }
+
+  function headerTable(headers) {
+    if (!headers.length) return '<p class="empty">None.</p>';
+    return '<div class="hdrs"><table>' + headers.map(function (h) {
+      return '<tr><td>' + esc(h.name) + '</td><td>' + esc(h.value) + '</td></tr>';
+    }).join('') + '</table></div>';
+  }
+
+  function renderDetail(e) {
+    var names = ['blocked', 'dns', 'ssl', 'connect', 'send', 'wait', 'receive'];
+    var labels = { blocked: 'Blocked', dns: 'DNS', ssl: 'SSL', connect: 'Connect', send: 'Send', wait: 'Wait', receive: 'Receive' };
+    var max = Math.max(e.timeMs, 1);
+    var trows = names.map(function (n) {
+      var v = e.timings[n];
+      return '<div class="t-row"><span>' + labels[n] + '</span>' +
+        '<div class="t-track"><div class="t-bar" style="width:' + Math.max(1, v / max * 100).toFixed(1) + '%"></div></div>' +
+        '<span>' + esc(L.formatMs(v)) + '</span></div>';
+    }).join('');
+    $('detailPanel').innerHTML =
+      '<h3>' + methodBadge(e.method) + ' ' + statusBadge(e.status) + ' ' + esc(e.url) + '</h3>' +
+      '<p>' + esc(e.mime || 'unknown type') + ' · ' + esc(L.formatBytes(e.sizeBytes)) +
+      ' · ' + esc(L.formatMs(e.timeMs)) + ' total</p>' +
+      '<div class="cols"><div><h4>Request headers</h4>' + headerTable(e.reqHeaders) + '</div>' +
+      '<div><h4>Response headers</h4>' + headerTable(e.resHeaders) + '</div></div>' +
+      '<h4>Timing breakdown</h4><div class="timings">' + trows + '</div>';
+    $('detailPanel').hidden = false;
+    $('detailPanel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  /* ---------- loading ---------- */
+  function loadText(text, label) {
+    var r = L.parseHar(text);
+    var st = $('fileStatus');
+    if (!r.ok) {
+      st.textContent = 'Error: ' + r.error;
+      st.className = 'status error';
+      $('results').hidden = true;
+      state.analysis = null;
+      return;
+    }
+    var entries = r.entries;
+    var pageTitle = (r.pages[0] && r.pages[0].title) || 'HAR page';
+    var pageUrl = '';
+    entries.forEach(function (raw) {
+      if (!pageUrl && raw._resourceType === 'document' && raw.request && raw.request.url) {
+        pageUrl = raw.request.url;
+      }
+    });
+    if (!pageUrl && entries[0] && entries[0].request) pageUrl = entries[0].request.url || '';
+    var analysis = L.buildAnalysis(entries, pageTitle, pageUrl);
+    st.textContent = 'Loaded ' + label + ': ' + analysis.summary.count + ' requests analyzed.';
+    st.className = 'status ok';
+    render(analysis);
+  }
+
+  function readFile(file) {
+    var reader = new FileReader();
+    reader.onload = function () { loadText(String(reader.result || ''), file.name); };
+    reader.onerror = function () {
+      $('fileStatus').textContent = 'Error: could not read that file.';
+      $('fileStatus').className = 'status error';
+    };
+    reader.readAsText(file);
+  }
+
+  /* ---------- events ---------- */
+  var dz = $('dropZone');
+  ['dragover', 'dragenter'].forEach(function (ev) {
+    dz.addEventListener(ev, function (e) { e.preventDefault(); dz.classList.add('dragover'); });
+  });
+  ['dragleave', 'drop'].forEach(function (ev) {
+    dz.addEventListener(ev, function (e) { e.preventDefault(); dz.classList.remove('dragover'); });
+  });
+  dz.addEventListener('drop', function (e) {
+    var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) readFile(f);
+  });
+  dz.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('fileInput').click(); }
+  });
+  $('fileBtn').addEventListener('click', function (e) { e.stopPropagation(); $('fileInput').click(); });
+  $('fileInput').addEventListener('change', function () {
+    if (this.files[0]) readFile(this.files[0]);
+    this.value = '';
+  });
+  $('sampleBtn').addEventListener('click', function (e) {
+    e.stopPropagation();
+    loadText(sampleHar(), 'sample HAR');
+  });
+
+  $('tabWaterfall').addEventListener('click', function () {
+    $('tabWaterfall').classList.add('active'); $('tabRequests').classList.remove('active');
+    $('waterfallView').hidden = false; $('requestsView').hidden = true;
+  });
+  $('tabRequests').addEventListener('click', function () {
+    $('tabRequests').classList.add('active'); $('tabWaterfall').classList.remove('active');
+    $('requestsView').hidden = false; $('waterfallView').hidden = true;
+  });
+  $('reqSearch').addEventListener('input', function () { renderTable(this.value); });
+  $('reqTableBody').addEventListener('click', function (e) {
+    var tr = e.target.closest('tr[data-i]');
+    if (tr) renderDetail(state.analysis.entries[Number(tr.getAttribute('data-i'))]);
+  });
+
+  function download(name, text, mime) {
+    var blob = new Blob([text], { type: mime });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  }
+  function csvEscape(v) {
+    var s = String(v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+
+  $('copyBtn').addEventListener('click', function () {
+    if (!state.analysis) return;
+    var text = L.textSummary(state.analysis);
+    var done = function () { $('copyBtn').textContent = 'Copied!'; setTimeout(function () { $('copyBtn').textContent = 'Copy text summary'; }, 1500); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, function () { fallbackCopy(text); done(); });
+    } else { fallbackCopy(text); done(); }
+  });
+  function fallbackCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch (e) { /* clipboard unavailable */ }
+    ta.remove();
+  }
+  $('jsonBtn').addEventListener('click', function () {
+    if (!state.analysis) return;
+    download('loadline-report.json', JSON.stringify(state.analysis, null, 2), 'application/json');
+  });
+  $('csvBtn').addEventListener('click', function () {
+    if (!state.analysis) return;
+    var csv = L.csvRows(state.analysis).map(function (r) {
+      return r.map(csvEscape).join(',');
+    }).join('\n');
+    download('loadline-requests.csv', csv, 'text/csv');
+  });
+})();
+</script>
+</body>
+</html>
