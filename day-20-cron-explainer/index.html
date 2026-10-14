@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CronLens — Cron Expression Explainer &amp; Next-Run Calculator</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1c2430; --mut:#5b6b7d; --line:#dbe1e8;
+          --ok:#1e7d4d; --warn:#a05a00; --err:#b3261e; --accent:#2456d6; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+         background:var(--bg); color:var(--ink); }
+  header { background:#16233a; color:#fff; padding:28px 20px 22px; }
+  header h1 { margin:0 0 6px; font-size:26px; }
+  header p { margin:0; color:#c3cede; max-width:760px; line-height:1.5; }
+  main { max-width:860px; margin:0 auto; padding:20px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px;
+          padding:18px; margin-bottom:16px; }
+  label { display:block; font-weight:600; margin-bottom:6px; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
+  input[type=text] { flex:1 1 320px; font-family:ui-monospace,Menlo,Consolas,monospace;
+         font-size:17px; padding:10px 12px; border:1.5px solid var(--line); border-radius:8px; }
+  input[type=text]:focus { outline:none; border-color:var(--accent); }
+  input[type=datetime-local], select { font-size:15px; padding:9px 10px;
+         border:1.5px solid var(--line); border-radius:8px; background:#fff; }
+  button { font-size:15px; padding:10px 16px; border:0; border-radius:8px; cursor:pointer; }
+  .primary { background:var(--accent); color:#fff; font-weight:600; }
+  .ghost { background:#eef2f7; color:var(--ink); }
+  .chip { background:#eef2f7; color:var(--ink); padding:7px 11px; border-radius:999px;
+          font-size:13px; font-family:ui-monospace,Menlo,Consolas,monospace; }
+  .chip:hover { background:#dde6f2; }
+  .chips { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+  .chips span { align-self:center; color:var(--mut); font-size:13px; }
+  .desc { font-size:20px; font-weight:600; line-height:1.4; margin:0 0 6px; }
+  .meta { color:var(--mut); font-size:14px; margin:0; }
+  .error { border-left:4px solid var(--err); background:#fdeceb; padding:12px 14px;
+           border-radius:6px; font-weight:600; }
+  .error small { display:block; font-weight:400; color:#5b2a27; margin-top:4px; }
+  .tip { border-left:4px solid var(--warn); background:#fff7e6; padding:10px 14px;
+         border-radius:6px; margin-top:10px; }
+  .tip strong { color:var(--warn); }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); }
+  th { color:var(--mut); font-weight:600; }
+  code { font-family:ui-monospace,Menlo,Consolas,monospace; background:#eef2f7;
+         padding:1px 6px; border-radius:5px; font-size:0.92em; }
+  .runs { list-style:none; margin:10px 0 0; padding:0; }
+  .runs li { padding:8px 10px; border-bottom:1px solid var(--line); font-size:15px;
+             display:flex; justify-content:space-between; gap:12px; }
+  .runs li span:last-child { color:var(--mut); white-space:nowrap; }
+  .muted { color:var(--mut); font-size:13.5px; line-height:1.6; }
+  .ok { color:var(--ok); font-weight:600; }
+  h2 { font-size:17px; margin:0 0 10px; }
+  details { font-size:14px; color:var(--mut); line-height:1.6; }
+  details summary { cursor:pointer; color:var(--ink); font-weight:600; }
+</style>
+</head>
+<body>
+<header>
+  <h1>⏱️ CronLens</h1>
+  <p>Paste a cron expression and get a plain-English explanation, the next run
+  times, and the classic gotchas — before a mis-scheduled job pages you at 3am.</p>
+</header>
+<main>
+  <div class="card">
+    <label for="expr">Cron expression</label>
+    <div class="row">
+      <input id="expr" type="text" value="0 2 * * *" autocomplete="off"
+             spellcheck="false" placeholder="e.g. 0 2 * * *">
+      <button class="primary" id="explainBtn">Explain</button>
+    </div>
+    <div class="chips">
+      <span>Presets:</span>
+      <button class="chip" data-expr="*/5 * * * *">*/5 * * * *</button>
+      <button class="chip" data-expr="0 * * * *">0 * * * *</button>
+      <button class="chip" data-expr="0 2 * * *">0 2 * * *</button>
+      <button class="chip" data-expr="0 9 * * MON-FRI">0 9 * * MON-FRI</button>
+      <button class="chip" data-expr="0 0 1 * *">0 0 1 * *</button>
+      <button class="chip" data-expr="0 9-17 * * MON-FRI">0 9-17 * * MON-FRI</button>
+      <button class="chip" data-expr="0 0 1 * 0">0 0 1 * 0</button>
+      <button class="chip" data-expr="@hourly">@hourly</button>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <div>
+        <label for="fromInput">Calculate runs from</label>
+        <input id="fromInput" type="datetime-local">
+      </div>
+      <div>
+        <label for="countSelect">Show next</label>
+        <select id="countSelect">
+          <option value="5" selected>5 runs</option>
+          <option value="10">10 runs</option>
+          <option value="20">20 runs</option>
+        </select>
+      </div>
+    </div>
+    <p class="muted" style="margin:12px 0 0">Format:
+      <code>minute hour day-of-month month day-of-week</code>
+      (optional leading <code>seconds</code> makes 6 fields).
+      Names like <code>MON</code> and <code>JAN</code> work. Times use your
+      browser's local timezone.</p>
+  </div>
+
+  <div class="card" id="resultCard" hidden>
+    <p class="desc" id="descOut"></p>
+    <p class="meta" id="metaOut"></p>
+    <div id="errorOut"></div>
+    <div id="tipsOut"></div>
+    <h2 style="margin-top:16px">Next runs</h2>
+    <ul class="runs" id="runsOut"></ul>
+    <div class="row" style="margin-top:14px">
+      <button class="ghost" id="copyBtn">Copy summary</button>
+      <span class="muted" id="copyNote"></span>
+    </div>
+  </div>
+
+  <div class="card" id="fieldsCard" hidden>
+    <h2>Field-by-field breakdown</h2>
+    <table>
+      <thead><tr><th>Field</th><th>You wrote</th><th>Matches</th><th>Meaning</th></tr></thead>
+      <tbody id="fieldsOut"></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <details>
+      <summary>Quick reference — the 5 fields</summary>
+      <p><code>*</code> means "every". <code>*/15</code> means "every 15".
+      <code>9-17</code> means "9 through 17". <code>1,15</code> means "1 and 15".
+      Combine them: <code>0,30 9-17 * * MON-FRI</code> runs at :00 and :30
+      past every hour from 9am to 5pm, Monday to Friday.</p>
+      <p><strong>Two gotchas:</strong> (1) If you restrict <em>both</em> day-of-month
+      and day-of-week, cron runs when <em>either</em> matches — not both.
+      (2) <code>0 0 * * 0</code> runs at midnight Sunday, not "every day".
+      Day-of-week <code>0</code> and <code>7</code> both mean Sunday.</p>
+      <p>Shortcuts: <code>@yearly</code> <code>@monthly</code> <code>@weekly</code>
+      <code>@daily</code> <code>@hourly</code> <code>@reboot</code>
+      (runs once at startup, not on a schedule).</p>
+    </details>
+  </div>
+</main>
+
+<script>
+/*
+ * CronLens — pure logic (no DOM). Testable from Node: test.js extracts this
+ * block and runs it in a VM. Exported as __cronLogic.
+ *
+ * Cron semantics implemented here follow classic Vixie cron:
+ *  - 5 fields: minute hour day-of-month month day-of-week
+ *  - optional 6th leading field: seconds (Quartz / Node-cron style)
+ *  - day-of-month AND day-of-week are OR-ed when both are restricted
+ *  - day-of-week 0 and 7 both mean Sunday
+ */
+'use strict';
+
+var MONTH_NAME_TO_NUM = { JAN: 1, FEB: 2, MAR: 3, APR: 4, MAY: 5, JUN: 6,
+  JUL: 7, AUG: 8, SEP: 9, OCT: 10, NOV: 11, DEC: 12,
+  JANUARY: 1, FEBRUARY: 2, MARCH: 3, APRIL: 4, JUNE: 6, JULY: 7,
+  AUGUST: 8, SEPTEMBER: 9, OCTOBER: 10, NOVEMBER: 11, DECEMBER: 12 };
+var DOW_NAME_TO_NUM = { SUN: 0, MON: 1, TUE: 2, WED: 3, THU: 4, FRI: 5, SAT: 6,
+  SUNDAY: 0, MONDAY: 1, TUESDAY: 2, WEDNESDAY: 3, THURSDAY: 4, FRIDAY: 5, SATURDAY: 6 };
+var MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
+var DOW_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+// Field definitions in order (seconds is prepended when 6 fields are given).
+var SECOND_SPEC = { key: 'second', label: 'second', min: 0, max: 59 };
+var FIELD_SPECS = [
+  { key: 'minute', label: 'minute', min: 0, max: 59 },
+  { key: 'hour', label: 'hour', min: 0, max: 23 },
+  { key: 'dom', label: 'day of month', min: 1, max: 31 },
+  { key: 'month', label: 'month', min: 1, max: 12, names: MONTH_NAME_TO_NUM },
+  { key: 'dow', label: 'day of week', min: 0, max: 7, names: DOW_NAME_TO_NUM }
+];
+
+var PRESETS = {
+  '@yearly': '0 0 1 1 *', '@annually': '0 0 1 1 *',
+  '@monthly': '0 0 1 * *', '@weekly': '0 0 * * 0',
+  '@daily': '0 0 * * *', '@midnight': '0 0 * * *', '@hourly': '0 * * * *'
+};
+
+function pad2(n) { return (n < 10 ? '0' : '') + n; }
+
+// "1st", "2nd", "3rd", "4th" ... (11th/12th/13th are the special cases).
+function ordinal(n) {
+  if (n % 100 >= 11 && n % 100 <= 13) return n + 'th';
+  if (n % 10 === 1) return n + 'st';
+  if (n % 10 === 2) return n + 'nd';
+  if (n % 10 === 3) return n + 'rd';
+  return n + 'th';
+}
+
+// Join a list the way a person would: "a", "a and b", "a, b and c".
+function listJoin(items) {
+  if (items.length === 0) return '';
+  if (items.length === 1) return String(items[0]);
+  if (items.length === 2) return items[0] + ' and ' + items[1];
+  return items.slice(0, -1).join(', ') + ' and ' + items[items.length - 1];
+}
+
+// Collapse a sorted set into ranges: {0,15,30,45} -> ["0", "15", "30", "45"],
+// {9..17} -> ["9-17"]. `display` is an array indexed by value, or a function
+// value -> string (needed when values are 1-based, like months).
+function compactRanges(sorted, display) {
+  var out = [];
+  var i = 0;
+  function name(v) {
+    if (typeof display === 'function') return display(v);
+    return display ? display[v] : String(v);
+  }
+  while (i < sorted.length) {
+    var start = sorted[i], end = start;
+    while (i + 1 < sorted.length && sorted[i + 1] === end + 1) { i++; end = sorted[i]; }
+    out.push(start === end ? name(start) : name(start) + '-' + name(end));
+    i++;
+  }
+  return out;
+}
+
+// If a set is an evenly-spaced step starting at `min` (e.g. */15 -> 0,15,30,45),
+// return the step size; otherwise null.
+function detectStep(sorted, min, max) {
+  if (sorted.length < 2) return null;
+  var step = sorted[1] - sorted[0];
+  if (step < 1 || sorted[0] !== min) return null;
+  for (var i = 1; i < sorted.length; i++) {
+    if (sorted[i] - sorted[i - 1] !== step) return null;
+  }
+  if (sorted[sorted.length - 1] + step <= max) return null; // would have one more value
+  return step;
+}
+
+// Parse one token ("JAN", "5", "9-17", "MON-FRI") into a number for a field.
+function parseValue(raw, spec) {
+  var upper = raw.toUpperCase();
+  if (spec.names && Object.prototype.hasOwnProperty.call(spec.names, upper)) {
+    return spec.names[upper];
+  }
+  if (!/^-?\d+$/.test(raw)) {
+    throw new Error('"' + raw + '" is not a valid ' + spec.label + ' value.');
+  }
+  return parseInt(raw, 10);
+}
+
+// Parse one field ("*/15", "1,15", "9-17/2", "MON-FRI") into a Set of numbers.
+function parseField(token, spec) {
+  if (!token) throw new Error('Empty ' + spec.label + ' field.');
+  var values = new Set();
+  var parts = token.split(',');
+  for (var p = 0; p < parts.length; p++) {
+    var part = parts[p];
+    if (!part) throw new Error('Empty entry in ' + spec.label + ' field ("' + token + '").');
+    var base = part, step = 1, stepped = false;
+    var slash = part.indexOf('/');
+    if (slash !== -1) {
+      stepped = true;
+      base = part.slice(0, slash);
+      var stepRaw = part.slice(slash + 1);
+      if (!/^\d+$/.test(stepRaw)) {
+        throw new Error('Step "' + stepRaw + '" in ' + spec.label + ' field must be a whole number.');
+      }
+      step = parseInt(stepRaw, 10);
+      if (step < 1) throw new Error('Step must be at least 1 in ' + spec.label + ' field ("' + part + '").');
+      if (base === '') throw new Error('Missing range before "/" in ' + spec.label + ' field ("' + part + '").');
+    }
+    var lo, hi;
+    if (base === '*') { lo = spec.min; hi = spec.max; }
+    else if (base.indexOf('-') !== -1) {
+      var dash = base.split('-');
+      if (dash.length !== 2 || dash[0] === '' || dash[1] === '') {
+        throw new Error('Bad range "' + base + '" in ' + spec.label + ' field.');
+      }
+      lo = parseValue(dash[0], spec);
+      hi = parseValue(dash[1], spec);
+      if (lo > hi) throw new Error('Range "' + base + '" is backwards in ' + spec.label + ' field.');
+    } else {
+      // A single value with a step ("5/20") runs from that value to the
+      // field maximum: 5, 25, 45. Without a step it is just that one value.
+      lo = parseValue(base, spec);
+      hi = stepped ? spec.max : lo;
+    }
+    if (lo < spec.min || hi > spec.max) {
+      throw new Error(spec.label + ' values must be between ' + spec.min + ' and ' +
+        spec.max + ' (got "' + base + '").');
+    }
+    for (var v = lo; v <= hi; v += step) values.add(v);
+  }
+  return values;
+}
+
+// Parse a whole expression. Returns { fields, restricted, raw, hasSeconds, ... }
+// or { reboot: true } for @reboot. Throws Error with a plain-language message.
+function parseCron(input) {
+  var expr = String(input == null ? '' : input).trim();
+  if (!expr) throw new Error('Enter a cron expression, e.g. "0 2 * * *".');
+  var lower = expr.toLowerCase();
+  if (lower === '@reboot') return { reboot: true, original: expr };
+  var expanded = PRESETS[lower] || expr;
+  var parts = expanded.split(/\s+/);
+  if (parts.length !== 5 && parts.length !== 6) {
+    throw new Error('Expected 5 fields (or 6 with seconds), found ' + parts.length +
+      '. Format: minute hour day-of-month month day-of-week.');
+  }
+  var hasSeconds = parts.length === 6;
+  var specs = hasSeconds ? [SECOND_SPEC].concat(FIELD_SPECS) : FIELD_SPECS;
+  var fields = {}, restricted = {}, raw = {};
+  for (var i = 0; i < parts.length; i++) {
+    var spec = specs[i], token = parts[i];
+    // Letters are only allowed in month / day-of-week names.
+    if (!spec.names && /[a-zA-Z]/.test(token)) {
+      if (/[lL]/.test(token)) {
+        throw new Error('"L" (last day) is not supported in the ' + spec.label +
+          ' field — use an explicit day number.');
+      }
+      throw new Error('Letters are not supported in the ' + spec.label +
+        ' field ("' + token + '").');
+    }
+    if (/[^a-zA-Z0-9*,/-]/.test(token)) {
+      throw new Error('Invalid character in ' + spec.label + ' field ("' + token + '").');
+    }
+    fields[spec.key] = parseField(token, spec);
+    restricted[spec.key] = token !== '*';
+    raw[spec.key] = token;
+  }
+  // Day-of-week 7 is Sunday, same as 0 — normalise so matching is simple.
+  if (fields.dow.has(7)) { fields.dow.delete(7); fields.dow.add(0); }
+  return { fields: fields, restricted: restricted, raw: raw,
+           hasSeconds: hasSeconds, original: expr };
+}
+
+// Does `date` match the schedule? Day-of-month / day-of-week follow Vixie
+// cron: when both are restricted, EITHER match fires the job.
+function matches(date, cron) {
+  var f = cron.fields, r = cron.restricted;
+  if (cron.hasSeconds && !f.second.has(date.getSeconds())) return false;
+  if (!f.minute.has(date.getMinutes())) return false;
+  if (!f.hour.has(date.getHours())) return false;
+  if (!f.month.has(date.getMonth() + 1)) return false;
+  var domMatch = f.dom.has(date.getDate());
+  var dowMatch = f.dow.has(date.getDay());
+  if (r.dom && r.dow) return domMatch || dowMatch;
+  if (r.dom) return domMatch;
+  if (r.dow) return dowMatch;
+  return true;
+}
+
+// Same as matches(), but ignores the seconds field (for per-minute counting).
+function matchesMinute(date, cron) {
+  var f = cron.fields, r = cron.restricted;
+  if (!f.minute.has(date.getMinutes())) return false;
+  if (!f.hour.has(date.getHours())) return false;
+  if (!f.month.has(date.getMonth() + 1)) return false;
+  var domMatch = f.dom.has(date.getDate());
+  var dowMatch = f.dow.has(date.getDay());
+  if (r.dom && r.dow) return domMatch || dowMatch;
+  if (r.dom) return domMatch;
+  if (r.dow) return dowMatch;
+  return true;
+}
+
+// Next `count` run times strictly after `from`. Steps minute-by-minute
+// (second-by-second for 6-field expressions), capped so a schedule that
+// never fires (or fires rarely) cannot hang the page.
+function nextRuns(cron, from, count) {
+  var out = [];
+  var cursor = new Date(from.getTime());
+  cursor.setMilliseconds(0);
+  if (cron.hasSeconds) {
+    cursor.setSeconds(cursor.getSeconds() + 1);
+  } else {
+    cursor.setSeconds(0);
+    cursor.setMinutes(cursor.getMinutes() + 1);
+  }
+  var steps = 0, maxSteps = 3000000; // ~5.7 years of minutes, ~35 days of seconds
+  while (out.length < count && steps < maxSteps) {
+    if (matches(cursor, cron)) out.push(new Date(cursor.getTime()));
+    if (cron.hasSeconds) cursor.setSeconds(cursor.getSeconds() + 1);
+    else cursor.setMinutes(cursor.getMinutes() + 1);
+    steps++;
+  }
+  return out;
+}
+
+// Roughly how many times the job fires in `days` days after `from`.
+function countRunsIn(cron, from, days) {
+  var count = 0;
+  var cursor = new Date(from.getTime());
+  cursor.setSeconds(0, 0);
+  cursor.setMinutes(cursor.getMinutes() + 1);
+  var total = days * 24 * 60;
+  for (var i = 0; i < total; i++) {
+    if (matchesMinute(cursor, cron)) count++;
+    cursor.setMinutes(cursor.getMinutes() + 1);
+  }
+  return count;
+}
+
+function hourPhrase(hours) {
+  if (hours.length === 1) return 'hour ' + hours[0];
+  var ranges = compactRanges(hours);
+  return 'hours ' + listJoin(ranges);
+}
+
+// Plain-English description, e.g. "At 02:00 on the 1st of every month."
+function describe(cron) {
+  if (cron.reboot) return 'Runs once when the machine (re)boots — not on a time schedule.';
+  var f = cron.fields, r = cron.restricted;
+  var mins = Array.from(f.minute).sort(function (a, b) { return a - b; });
+  var hrs = Array.from(f.hour).sort(function (a, b) { return a - b; });
+  var minStep = detectStep(mins, 0, 59);
+  var hourStep = detectStep(hrs, 0, 23);
+
+  var time;
+  if (!r.minute && !r.hour) {
+    time = 'Every minute';
+  } else if (minStep && !r.hour) {
+    time = 'Every ' + minStep + ' minutes';
+  } else if (mins.length === 1 && hourStep && r.hour) {
+    time = 'Every ' + hourStep + ' hours at minute ' + pad2(mins[0]);
+  } else if (!r.minute) {
+    time = 'Every minute during ' + hourPhrase(hrs);
+  } else if (!r.hour) {
+    time = 'At minute ' + listJoin(mins.map(String)) + ' of every hour';
+  } else if (mins.length === 1 && hrs.length === 1) {
+    time = 'At ' + pad2(hrs[0]) + ':' + pad2(mins[0]);
+  } else if (mins.length === 1) {
+    time = 'At minute ' + pad2(mins[0]) + ' of ' + hourPhrase(hrs);
+  } else if (hrs.length === 1) {
+    time = 'At minutes ' + listJoin(mins.map(String)) + ' past hour ' + hrs[0];
+  } else {
+    time = 'At minutes ' + listJoin(mins.map(String)) + ' of ' + hourPhrase(hrs);
+  }
+
+  // Seconds: fold into the time when everything is a single value.
+  if (cron.hasSeconds && r.second) {
+    var secs = Array.from(f.second).sort(function (a, b) { return a - b; });
+    if (secs.length === 1 && mins.length === 1 && hrs.length === 1 && !minStep && !hourStep) {
+      time = 'At ' + pad2(hrs[0]) + ':' + pad2(mins[0]) + ':' + pad2(secs[0]);
+    } else {
+      time += ' (at second ' + listJoin(secs.map(String)) + ')';
+    }
+  }
+
+  var day = '';
+  var domPhrase = listJoin(compactRanges(Array.from(f.dom).sort(function (a, b) { return a - b; }), null).map(function (x) {
+    if (/^\d+$/.test(x)) return ordinal(parseInt(x, 10));
+    var m = /^(\d+)-(\d+)$/.exec(x); // range like "1-15" -> "1st-15th"
+    if (m) return ordinal(parseInt(m[1], 10)) + '-' + ordinal(parseInt(m[2], 10));
+    return x;
+  }));
+  var dowVals = Array.from(f.dow).sort(function (a, b) { return a - b; });
+  var dowPhrase = listJoin(compactRanges(dowVals, DOW_NAMES));
+  if (r.dom && r.dow) {
+    day = ' on the ' + domPhrase + ' of the month or on ' + dowPhrase + ' (either one triggers it)';
+  } else if (r.dom) {
+    day = ' on the ' + domPhrase + ' of the month';
+  } else if (r.dow) {
+    day = ' on ' + dowPhrase;
+  }
+  if (r.month) {
+    var months = Array.from(f.month).sort(function (a, b) { return a - b; });
+    day += ' in ' + listJoin(compactRanges(months, function (v) { return MONTH_NAMES[v - 1]; }));
+  }
+  return time + day + '.';
+}
+
+// Gotcha warnings for this expression, as plain strings.
+function getTips(cron) {
+  var tips = [];
+  if (cron.reboot) {
+    tips.push('@reboot jobs do not run on a schedule — they run once at startup, and they do not re-run if the service restarts without a reboot.');
+    return tips;
+  }
+  var r = cron.restricted;
+  if (r.dom && r.dow) {
+    tips.push('Day-of-month AND day-of-week are OR-ed in cron: this runs when EITHER matches, not when both do. This is the most common cron surprise.');
+  }
+  if (!r.minute && !r.hour) {
+    tips.push('This runs every single minute. Double-check that is intended — it is the most common accidental schedule.');
+  }
+  if (cron.hasSeconds) {
+    tips.push('The 6-field form (with seconds) works in Quartz and many Node cron libraries, but NOT in classic Vixie cron on Linux — check which cron your system uses.');
+  }
+  if (cron.raw.dow && /7/.test(cron.raw.dow)) {
+    tips.push('"7" means Sunday here (normalised to 0). Some cron variants treat 7 differently — prefer 0 for portability.');
+  }
+  if (r.dom && Array.from(cron.fields.dom).indexOf(31) !== -1) {
+    tips.push('Day 31 does not exist in every month, so this schedule skips those months entirely.');
+  }
+  if (r.dom && r.month && Array.from(cron.fields.dom).indexOf(29) !== -1 &&
+      cron.fields.month.size === 1 && cron.fields.month.has(2)) {
+    tips.push('February 29 only exists in leap years, so this runs about once every 4 years.');
+  }
+  return tips;
+}
+
+function formatDateTime(d) {
+  return DOW_NAMES[d.getDay()].slice(0, 3) + ', ' + MONTH_NAMES[d.getMonth()].slice(0, 3) +
+    ' ' + d.getDate() + ', ' + d.getFullYear() + ' at ' +
+    pad2(d.getHours()) + ':' + pad2(d.getMinutes()) +
+    (d.getSeconds() ? ':' + pad2(d.getSeconds()) : '');
+}
+
+// "in 2h 15m", "in 3d 4h", "in 45s" — relative to `from`.
+function formatRelative(from, target) {
+  var diffSec = Math.round((target.getTime() - from.getTime()) / 1000);
+  if (diffSec < 0) return 'in the past';
+  if (diffSec < 60) return 'in ' + diffSec + 's';
+  var mins = Math.floor(diffSec / 60);
+  if (mins < 60) return 'in ' + mins + 'm';
+  var hours = Math.floor(mins / 60);
+  var remM = mins % 60;
+  if (hours < 24) return 'in ' + hours + 'h' + (remM ? ' ' + remM + 'm' : '');
+  var days = Math.floor(hours / 24);
+  var remH = hours % 24;
+  return 'in ' + days + 'd' + (remH ? ' ' + remH + 'h' : '');
+}
+
+// One-line summary for pasting into a ticket / chat message.
+function textSummary(cron, from, runs) {
+  var lines = ['Cron: ' + cron.original, describe(cron)];
+  runs.forEach(function (d) {
+    lines.push('- ' + formatDateTime(d) + ' (' + formatRelative(from, d) + ')');
+  });
+  return lines.join('\n');
+}
+
+var __cronLogic = { parseCron: parseCron, matches: matches,
+  nextRuns: nextRuns, countRunsIn: countRunsIn, describe: describe,
+  getTips: getTips, formatDateTime: formatDateTime,
+  formatRelative: formatRelative, textSummary: textSummary,
+  compactRanges: compactRanges, ordinal: ordinal, listJoin: listJoin };
+if (typeof module !== 'undefined' && module.exports) module.exports = __cronLogic;
+</script>
+
+<script>
+/* UI wiring — DOM only, kept separate so the logic above stays testable. */
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var exprEl = $('expr'), fromEl = $('fromInput'), countEl = $('countSelect');
+
+  // Default "from" = now, in the local format datetime-local expects.
+  var now = new Date();
+  var local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+  fromEl.value = local.toISOString().slice(0, 16);
+
+  function escapeHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function render() {
+    var resultCard = $('resultCard'), fieldsCard = $('fieldsCard');
+    var errorOut = $('errorOut'), tipsOut = $('tipsOut');
+    errorOut.innerHTML = ''; tipsOut.innerHTML = '';
+    var from = fromEl.value ? new Date(fromEl.value) : new Date();
+    var count = parseInt(countEl.value, 10) || 5;
+    var cron;
+    try {
+      cron = __cronLogic.parseCron(exprEl.value);
+    } catch (e) {
+      resultCard.hidden = false; fieldsCard.hidden = true;
+      $('descOut').textContent = 'That expression does not parse.';
+      $('metaOut').textContent = '';
+      $('runsOut').innerHTML = '';
+      errorOut.innerHTML = '<div class="error">' + escapeHtml(e.message) +
+        '<small>Expected format: <code>minute hour day-of-month month day-of-week</code> — ' +
+        'e.g. <code>0 2 * * *</code> runs at 2:00am every day.</small></div>';
+      return;
+    }
+    resultCard.hidden = false;
+    $('descOut').textContent = __cronLogic.describe(cron);
+
+    if (cron.reboot) {
+      $('metaOut').textContent = '@reboot — runs once at startup, no next-run times.';
+      $('runsOut').innerHTML = '';
+      fieldsCard.hidden = true;
+    } else {
+      var runs = __cronLogic.nextRuns(cron, from, count);
+      var weekly = __cronLogic.countRunsIn(cron, from, 7);
+      $('metaOut').textContent = 'Runs about ' + weekly + ' time' +
+        (weekly === 1 ? '' : 's') + ' in the next 7 days.';
+      $('runsOut').innerHTML = runs.length
+        ? runs.map(function (d) {
+            return '<li><span>' + escapeHtml(__cronLogic.formatDateTime(d)) +
+              '</span><span>' + escapeHtml(__cronLogic.formatRelative(from, d)) + '</span></li>';
+          }).join('')
+        : '<li><span>No runs found in the search window.</span><span></span></li>';
+      // Field breakdown.
+      var specs = cron.hasSeconds
+        ? [{ key: 'second', label: 'Second' }, { key: 'minute', label: 'Minute' },
+           { key: 'hour', label: 'Hour' }, { key: 'dom', label: 'Day of month' },
+           { key: 'month', label: 'Month' }, { key: 'dow', label: 'Day of week' }]
+        : [{ key: 'minute', label: 'Minute' }, { key: 'hour', label: 'Hour' },
+           { key: 'dom', label: 'Day of month' }, { key: 'month', label: 'Month' },
+           { key: 'dow', label: 'Day of week' }];
+      var rows = specs.map(function (s) {
+        var vals = Array.from(cron.fields[s.key]).sort(function (a, b) { return a - b; });
+        var display = s.key === 'month'
+          ? vals.map(function (v) { return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][v - 1]; })
+          : s.key === 'dow'
+            ? vals.map(function (v) { return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][v]; })
+            : vals;
+        var meaning = cron.restricted[s.key] ? 'only ' + display.join(', ') : 'every value';
+        return '<tr><td>' + escapeHtml(s.label) + '</td><td><code>' +
+          escapeHtml(cron.raw[s.key]) + '</code></td><td>' +
+          escapeHtml(display.join(', ')) + '</td><td>' + escapeHtml(meaning) + '</td></tr>';
+      }).join('');
+      $('fieldsOut').innerHTML = rows;
+      fieldsCard.hidden = false;
+    }
+
+    var tips = __cronLogic.getTips(cron);
+    tipsOut.innerHTML = tips.map(function (t) {
+      return '<div class="tip"><strong>Heads up:</strong> ' + escapeHtml(t) + '</div>';
+    }).join('');
+  }
+
+  $('explainBtn').addEventListener('click', render);
+  exprEl.addEventListener('input', render);
+  fromEl.addEventListener('change', render);
+  countEl.addEventListener('change', render);
+  document.querySelectorAll('.chip').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      exprEl.value = btn.getAttribute('data-expr');
+      render();
+    });
+  });
+  $('copyBtn').addEventListener('click', function () {
+    var from = fromEl.value ? new Date(fromEl.value) : new Date();
+    var cron;
+    try { cron = __cronLogic.parseCron(exprEl.value); } catch (e) { return; }
+    var runs = cron.reboot ? [] : __cronLogic.nextRuns(cron, from, 5);
+    var text = __cronLogic.textSummary(cron, from, runs);
+    navigator.clipboard.writeText(text).then(function () {
+      $('copyNote').textContent = 'Copied.';
+      setTimeout(function () { $('copyNote').textContent = ''; }, 2000);
+    }, function () { $('copyNote').textContent = 'Copy failed — select the text manually.'; });
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>
