@@ -1,0 +1,899 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DecodeX — Error Code Decoder for Support Desks</title>
+<style>
+  :root{
+    --bg:#0f172a; --panel:#1e293b; --panel2:#273549; --line:#334155;
+    --txt:#e2e8f0; --muted:#94a3b8; --acc:#38bdf8; --good:#4ade80;
+    --warn:#facc15; --bad:#f87171; --crit:#ef4444; --info:#60a5fa;
+  }
+  *{box-sizing:border-box}
+  body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+       background:var(--bg);color:var(--txt);margin:0;padding:0;line-height:1.55}
+  header{background:linear-gradient(135deg,#0c4a6e,#1e3a8a);padding:26px 20px;text-align:center}
+  header h1{margin:0;font-size:1.7rem}
+  header p{margin:6px 0 0;color:#bae6fd;font-size:.95rem}
+  main{max-width:920px;margin:0 auto;padding:22px 16px 60px}
+  .searchbar{display:flex;gap:8px;margin:18px 0 10px}
+  #q{flex:1;padding:12px 14px;font-size:1.05rem;border-radius:8px;border:1px solid var(--line);
+     background:var(--panel);color:var(--txt);font-family:ui-monospace,Consolas,monospace}
+  #go{padding:12px 20px;font-size:1rem;border:0;border-radius:8px;background:var(--acc);
+      color:#082f49;font-weight:700;cursor:pointer}
+  #go:hover{background:#7dd3fc}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 16px}
+  .chip{padding:5px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel);
+        color:var(--muted);font-size:.82rem;cursor:pointer}
+  .chip.active{background:var(--acc);color:#082f49;border-color:var(--acc);font-weight:600}
+  .hint{color:var(--muted);font-size:.85rem;margin:0 0 14px}
+  .hint code{background:var(--panel);padding:1px 6px;border-radius:4px;color:var(--acc)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+        padding:20px 22px;margin:16px 0}
+  .card h2{margin:0 0 4px;font-size:1.35rem;font-family:ui-monospace,Consolas,monospace}
+  .meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0 12px}
+  .badge{font-size:.75rem;font-weight:700;padding:3px 10px;border-radius:999px;letter-spacing:.4px}
+  .cat{background:var(--panel2);color:var(--acc);border:1px solid var(--line)}
+  .sev-info{background:#1d4ed8;color:#dbeafe}
+  .sev-warning{background:#a16207;color:#fef9c3}
+  .sev-error{background:#b91c1c;color:#fee2e2}
+  .sev-critical{background:#7f1d1d;color:#fecaca}
+  .meaning{font-size:1.02rem;margin:10px 0}
+  .card h3{margin:16px 0 6px;font-size:.95rem;color:var(--acc);text-transform:uppercase;letter-spacing:.6px}
+  ul.tight{margin:6px 0;padding-left:20px}
+  ul.tight li{margin:4px 0}
+  ol.tight{margin:6px 0;padding-left:20px}
+  ol.tight li{margin:6px 0}
+  .hres{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:10px 0}
+  .hres div{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+  .hres small{color:var(--muted);display:block;font-size:.72rem;text-transform:uppercase;letter-spacing:.5px}
+  .hres b{font-family:ui-monospace,Consolas,monospace}
+  .btnrow{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+  button.ghost{background:transparent;border:1px solid var(--line);color:var(--txt);
+               padding:8px 14px;border-radius:8px;cursor:pointer;font-size:.88rem}
+  button.ghost:hover{border-color:var(--acc);color:var(--acc)}
+  .results .res{display:flex;justify-content:space-between;align-items:center;gap:10px;
+                padding:10px 14px;border:1px solid var(--line);border-radius:8px;margin:8px 0;
+                background:var(--panel);cursor:pointer}
+  .results .res:hover{border-color:var(--acc)}
+  .results code{font-size:1rem;color:var(--acc)}
+  .results span.t{color:var(--txt)}
+  .results small{color:var(--muted);display:block}
+  .nores{color:var(--muted);padding:14px 4px}
+  .unknown{border-left:4px solid var(--warn)}
+  footer{color:var(--muted);font-size:.82rem;text-align:center;padding:18px}
+  kbd{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:1px 6px;font-size:.8rem}
+</style>
+</head>
+<body>
+<header>
+  <h1>&#x1F50D; DecodeX</h1>
+  <p>Paste any error code — HTTP, Windows HRESULT, Win32, POSIX/Node errno, SMTP, DNS, browser &amp; JS —
+     and get a plain-English diagnosis with fix steps, ready to drop into a ticket.</p>
+</header>
+<main>
+  <div class="searchbar">
+    <input id="q" type="text" placeholder="e.g. 404 · 0x80070005 · EACCES · 550 · NXDOMAIN · Failed to fetch" autocomplete="off" spellcheck="false">
+    <button id="go">Decode</button>
+  </div>
+  <p class="hint">Tips: Windows hex codes are <em>decoded bit-by-bit</em> (severity / facility / code) even if
+     the exact code isn't in the database. Press <kbd>Enter</kbd> to decode.</p>
+  <div class="chips" id="chips"></div>
+  <div id="out"></div>
+</main>
+<footer>DecodeX — a support-desk error decoder. Database covers ~110 codes across 6 families.</footer>
+
+<script>
+/* =====================================================================
+ * DecodeX — pure logic (browser-free). Test harness extracts THIS block.
+ * Exported surface: __errLogic = { DB, CATS, normalize, lookup, search,
+ *   decodeHresult, facilityName, ticketText }
+ * =================================================================== */
+
+/* Category ids in display order */
+const CATS = [
+  { id:'http',   label:'HTTP status codes' },
+  { id:'win',    label:'Windows HRESULT' },
+  { id:'win32',  label:'Windows Win32 codes' },
+  { id:'posix',  label:'POSIX / Node errno' },
+  { id:'smtp',   label:'SMTP mail codes' },
+  { id:'dns',    label:'DNS & browser network' },
+  { id:'js',     label:'Browser & JavaScript' }
+];
+
+/* One entry:
+   { key, code (display), title, cat, sev, meaning, causes[], steps[], tags[] }
+   sev: info | warning | error | critical                                     */
+const DB = [
+/* ---------------- HTTP ---------------- */
+{key:'http:100',code:'100',title:'Continue',cat:'http',sev:'info',
+ meaning:'The server received the request headers and is waiting for the body. Normal part of large uploads.',
+ causes:['Client asked to confirm before sending a large body (Expect: 100-continue).'],
+ steps:['No action needed — this is informational.','If uploads stall here, check the client timeout for the 100-continue handshake.'],
+ tags:['expect','informational','upload']},
+{key:'http:200',code:'200',title:'OK',cat:'http',sev:'info',
+ meaning:'The request succeeded. The baseline "everything worked" response.',
+ causes:['Request completed normally.'],
+ steps:['Nothing to fix. If you expected an error, the problem is in what the server returned, not the status.'],
+ tags:['success','ok']},
+{key:'http:201',code:'201',title:'Created',cat:'http',sev:'info',
+ meaning:'The request succeeded and a new resource was created — the expected answer after a successful POST.',
+ causes:['Normal successful creation of a record, file, or user.'],
+ steps:['No action needed. The Location header usually points at the new resource.'],
+ tags:['success','post','created']},
+{key:'http:204',code:'204',title:'No Content',cat:'http',sev:'info',
+ meaning:'Success, but intentionally no body returned — common for DELETE or save-without-refresh calls.',
+ causes:['Server intentionally returned nothing.'],
+ steps:['No action needed. If a page goes blank after saving, the frontend may be mishandling a 204.'],
+ tags:['success','delete']},
+{key:'http:301',code:'301',title:'Moved Permanently',cat:'http',sev:'warning',
+ meaning:'The URL moved for good. Browsers and crawlers should use the new Location from now on.',
+ causes:['Site migrated domains or restructured URLs.','Missing www/non-www or http→https redirect.'],
+ steps:['Update bookmarks and hardcoded links to the new URL.','Check the Location header — is the redirect target correct?','If users see a redirect loop, the new URL is redirecting back to the old one.'],
+ tags:['redirect','moved','seo']},
+{key:'http:302',code:'302',title:'Found',cat:'http',sev:'info',
+ meaning:'Temporary redirect — the resource lives at the Location URL for now, but keep using the old URL later.',
+ causes:['Login flows bouncing to a session page.','A/B tests or maintenance pages.'],
+ steps:['Follow the Location header.','If a login never completes, watch for a 302 loop (login → home → login).'],
+ tags:['redirect','temporary','login']},
+{key:'http:304',code:'304',title:'Not Modified',cat:'http',sev:'info',
+ meaning:'The client already has the current version (from cache); the server sent nothing new. This is a cache HIT, not an error.',
+ causes:['Browser sent If-Modified-Since / If-None-Match and content is unchanged.'],
+ steps:['No action needed. If users report stale content, investigate caching headers, not the 304.'],
+ tags:['cache','redirect','not modified']},
+{key:'http:400',code:'400',title:'Bad Request',cat:'http',sev:'error',
+ meaning:'The server could not understand the request — malformed syntax, invalid JSON, or a bad query parameter.',
+ causes:['Malformed JSON body or wrong Content-Type.','Required field missing or in the wrong format.','URL too long or with illegal characters.'],
+ steps:['Reproduce the request and inspect the raw body/URL.','Validate JSON with a linter before resending.','Check the API docs for required fields and formats.','Read the response body — servers often name the offending field.'],
+ tags:['client error','malformed','json','validation']},
+{key:'http:401',code:'401',title:'Unauthorized',cat:'http',sev:'error',
+ meaning:'Authentication is required or the credentials provided are invalid/expired. (The name is misleading — it means "unauthenticated".)',
+ causes:['Missing or expired token/session.','Wrong username or password.','API key revoked or sent to the wrong endpoint.'],
+ steps:['Log out and log back in to get a fresh token/session.','Check that the Authorization header or cookie is actually being sent.','Verify the token expiry and the server clock (skew breaks JWTs).','Confirm the account is not locked or disabled.'],
+ tags:['auth','login','token','session','expired']},
+{key:'http:403',code:'403',title:'Forbidden',cat:'http',sev:'error',
+ meaning:'The server understood who you are, but you are not allowed to do this. Authentication passed; authorization failed.',
+ causes:['User role lacks the permission.','IP blocked by WAF/firewall rules.','File or directory permissions on the server.','Trying to list a directory with indexing disabled.'],
+ steps:['Confirm the user role/group has the required permission.','Check server file permissions and WAF block lists.','For "403 on a new page": verify the route requires a role the user has.'],
+ tags:['auth','permissions','forbidden','waf','rbac']},
+{key:'http:404',code:'404',title:'Not Found',cat:'http',sev:'error',
+ meaning:'The server has no resource at this URL. Either the URL is wrong or the thing was deleted.',
+ causes:['Typo in the URL.','Resource deleted or never existed.','Wrong base URL / environment (dev vs prod).','SPA route not handled by the server (needs a fallback rewrite).'],
+ steps:['Re-check the URL for typos, case, and trailing slashes.','Test the endpoint in another environment.','For single-page apps: ensure the server rewrites unknown paths to index.html.','Check whether the record was deleted in the database.'],
+ tags:['not found','url','typo','missing']},
+{key:'http:405',code:'405',title:'Method Not Allowed',cat:'http',sev:'error',
+ meaning:'The URL exists, but the HTTP method (GET/POST/PUT/DELETE) is not allowed on it.',
+ causes:['Sending POST to a GET-only endpoint (or vice versa).','Form or AJAX call using the wrong method.'],
+ steps:['Check the Allow header in the response — it lists valid methods.','Fix the client to use the documented method.'],
+ tags:['method','post','get','put','delete']},
+{key:'http:408',code:'408',title:'Request Timeout',cat:'http',sev:'warning',
+ meaning:'The server gave up waiting for the client to finish sending the request.',
+ causes:['Very slow client connection.','Client opened a connection but never sent the body.'],
+ steps:['Retry — this is often transient.','Check the client network (VPN, proxy, mobile signal).','Increase client timeouts if uploads are legitimately slow.'],
+ tags:['timeout','slow','retry']},
+{key:'http:409',code:'409',title:'Conflict',cat:'http',sev:'error',
+ meaning:'The request conflicts with the current state — e.g. creating something that already exists, or editing a stale version.',
+ causes:['Duplicate unique key (username, email, SKU).','Two users edited the same record; version mismatch.'],
+ steps:['Read the response body — it usually names the conflicting field.','Refresh the data and retry the edit.','Check for duplicate records in the database.'],
+ tags:['conflict','duplicate','unique','race']},
+{key:'http:410',code:'410',title:'Gone',cat:'http',sev:'warning',
+ meaning:'The resource was deliberately removed and will not come back. Stronger than 404 — do not retry.',
+ causes:['Feature or page retired.','Old API version shut down.'],
+ steps:['Update the client to stop requesting this URL.','Remove it from search indexes and internal links.'],
+ tags:['gone','retired','deprecated']},
+{key:'http:413',code:'413',title:'Content Too Large',cat:'http',sev:'error',
+ meaning:'The request body is bigger than the server allows — classic on file uploads.',
+ causes:['Upload exceeds the server limit (e.g. nginx client_max_body_size).','Trying to POST a huge JSON payload.'],
+ steps:['Check the file size vs the documented limit.','Compress the file or split the upload into chunks.','Ask the server team to raise the limit if the use case is legitimate.'],
+ tags:['upload','file size','limit','payload']},
+{key:'http:415',code:'415',title:'Unsupported Media Type',cat:'http',sev:'error',
+ meaning:'The server refuses the format of the request body — usually a wrong or missing Content-Type.',
+ causes:['Sending JSON without Content-Type: application/json.','Uploading a file type the endpoint does not accept.'],
+ steps:['Set the correct Content-Type header.','Check the API docs for accepted formats.'],
+ tags:['content-type','format','mime']},
+{key:'http:422',code:'422',title:'Unprocessable Content',cat:'http',sev:'error',
+ meaning:'The request was well-formed, but the data failed validation — the modern "your input is wrong" code.',
+ causes:['Field fails a business rule (e.g. end date before start date).','Valid JSON, invalid values.'],
+ steps:['Read the response body — it lists the failing fields and rules.','Fix the input per the validation messages and resend.'],
+ tags:['validation','unprocessable','input']},
+{key:'http:423',code:'423',title:'Locked',cat:'http',sev:'error',
+ meaning:'The resource is locked — another process or user is editing it (common in WebDAV / document systems).',
+ causes:['File checked out by another user.','Background job holding a lock.'],
+ steps:['Find out who/what holds the lock and wait or ask them to release it.','Check for stale locks after crashed processes.'],
+ tags:['locked','webdav','checkout']},
+{key:'http:429',code:'429',title:'Too Many Requests',cat:'http',sev:'warning',
+ meaning:'Rate limit hit. The client is sending requests too fast; back off and retry later.',
+ causes:['Aggressive polling or a runaway loop.','Shared IP hitting a global limit.'],
+ steps:['Respect the Retry-After header before retrying.','Add exponential backoff in the client.','Cache responses instead of polling.'],
+ tags:['rate limit','throttle','retry-after','backoff']},
+{key:'http:451',code:'451',title:'Unavailable For Legal Reasons',cat:'http',sev:'warning',
+ meaning:'The resource is blocked for legal reasons — takedown, censorship, or regional restriction.',
+ causes:['Court order or DMCA takedown.','Geo-blocking for licensed content.'],
+ steps:['This is a policy/legal matter, not a technical bug — escalate to legal/compliance.','Document which region and content are affected.'],
+ tags:['legal','blocked','geo','takedown']},
+{key:'http:500',code:'500',title:'Internal Server Error',cat:'http',sev:'error',
+ meaning:'Something broke on the server and it is not telling you what — the generic "server bug" code.',
+ causes:['Unhandled exception in server code.','Database connection failure.','Misconfigured server after a deploy.'],
+ steps:['Check the server/application logs around the request time — the real error is there.','Reproduce with minimal input.','If it started after a deploy, consider rolling back.','Do NOT keep retrying blindly; gather a request ID/timestamp for the backend team.'],
+ tags:['server error','crash','exception','logs']},
+{key:'http:501',code:'501',title:'Not Implemented',cat:'http',sev:'error',
+ meaning:'The server does not support the functionality required — often an unfinished API endpoint.',
+ causes:['Endpoint stubbed but not built.','Method not supported by this server version.'],
+ steps:['Check the API changelog — the feature may not exist yet.','Use a documented alternative endpoint.'],
+ tags:['not implemented','api','stub']},
+{key:'http:502',code:'502',title:'Bad Gateway',cat:'http',sev:'error',
+ meaning:'A proxy/gateway got an invalid response from the upstream server — the middle tier is fine, the backend is not answering properly.',
+ causes:['Backend app crashed or restarting.','Upstream timeout or protocol mismatch.','DNS failure for the upstream host.'],
+ steps:['Check whether the backend service is actually running.','Look at gateway AND backend logs.','Verify the upstream host/port the gateway is configured to use.'],
+ tags:['gateway','proxy','upstream','backend']},
+{key:'http:503',code:'503',title:'Service Unavailable',cat:'http',sev:'warning',
+ meaning:'The server is temporarily unable to handle the request — overloaded or down for maintenance.',
+ causes:['Traffic spike exhausting resources.','Planned maintenance window.','Backend dependency (DB, queue) down.'],
+ steps:['Check the Retry-After header and the status page.','Retry with backoff — 503 is usually transient.','If persistent, check server CPU/memory and backend dependencies.'],
+ tags:['unavailable','overload','maintenance','retry']},
+{key:'http:504',code:'504',title:'Gateway Timeout',cat:'http',sev:'warning',
+ meaning:'The gateway waited too long for the upstream server — the backend is slow, not necessarily down.',
+ causes:['Slow database query behind the endpoint.','Upstream service hanging.','Timeout set too aggressively on the gateway.'],
+ steps:['Time the backend directly to isolate the slow layer.','Check DB slow-query logs.','Consider raising the gateway timeout or making the call asynchronous.'],
+ tags:['timeout','gateway','slow','database']},
+
+/* ---------------- Windows HRESULT ---------------- */
+{key:'win:0x00000000',code:'0x00000000',title:'S_OK',cat:'win',sev:'info',
+ meaning:'Success. The operation completed with no error.',
+ causes:['Normal successful return from a Windows API call.'],
+ steps:['Nothing to fix — S_OK means it worked.'],
+ tags:['success','ok','s_ok']},
+{key:'win:0x80070005',code:'0x80070005',title:'E_ACCESSDENIED — Access is denied',cat:'win',sev:'error',
+ meaning:'Windows refused the operation because of permissions. The low 16 bits decode to Win32 error 5 (Access is denied).',
+ causes:['File/folder ACLs do not grant access.','App not running as administrator.','Service logon account lacks rights.','Antivirus or Controlled Folder Access blocking the write.'],
+ steps:['Check the effective permissions (right-click → Properties → Security → Advanced → Effective Access).','Run the installer/app elevated if the task genuinely needs admin rights.','For services: verify the service logon account.','Check Event Viewer for the matching "Access denied" audit entry.'],
+ tags:['access denied','permissions','acl','admin','e_accessdenied']},
+{key:'win:0x80070002',code:'0x80070002',title:'File not found (Win32 2)',cat:'win',sev:'error',
+ meaning:'Windows could not find the file — low bits decode to Win32 error 2.',
+ causes:['Wrong path or typo.','File deleted or moved.','Installer referencing a file that was never extracted.','Working directory different from what the app assumes.'],
+ steps:['Verify the exact path exists (copy-paste it into Explorer).','Search the drive for the filename.','Re-run the installer/extraction step.'],
+ tags:['file not found','missing','path']},
+{key:'win:0x80070003',code:'0x80070003',title:'Path not found (Win32 3)',cat:'win',sev:'error',
+ meaning:'A folder in the path does not exist — subtly different from "file not found".',
+ causes:['Drive letter changed (USB/network drive).','Intermediate folder renamed or deleted.','UNC path with a wrong share name.'],
+ steps:['Walk the path segment by segment in Explorer.','Check mapped drives / reconnect network shares.'],
+ tags:['path not found','folder','unc','drive']},
+{key:'win:0x80070020',code:'0x80070020',title:'File in use / sharing violation (Win32 32)',cat:'win',sev:'error',
+ meaning:'Another process has the file open with an exclusive lock.',
+ causes:['File open in another program.','Antivirus scanning the file mid-write.','A previous instance of the app did not exit cleanly.'],
+ steps:['Close programs that might hold the file (or reboot to release stale handles).','Use Process Explorer → Find → File Handle to identify the locking process.','Exclude the folder from real-time AV scanning if it is a build/output directory.'],
+ tags:['file in use','locked','sharing violation','handle']},
+{key:'win:0x80070057',code:'0x80070057',title:'E_INVALIDARG — Invalid parameter (Win32 87)',cat:'win',sev:'error',
+ meaning:'A function was called with a bad argument — usually a malformed setting, path, or value passed to Windows.',
+ causes:['Corrupt registry or config value.','Invalid characters in a path or parameter.','Bug in the calling application.'],
+ steps:['Undo the most recent config change.','Check for illegal characters ( < > : " / \\ | ? * ) in paths and names.','Update the application — this is often a software bug.'],
+ tags:['invalid parameter','e_invalidarg','config','registry']},
+{key:'win:0x80004005',code:'0x80004005',title:'E_FAIL — Unspecified failure',cat:'win',sev:'error',
+ meaning:'The generic "something failed" HRESULT. It carries no detail by itself — the real cause is always in the logs.',
+ causes:['Anything the component did not handle more specifically.','Very common as a wrapper around a deeper error.'],
+ steps:['Check Event Viewer → Windows Logs → Application around the failure time.','Look for a more specific error just before/after this one.','Enable verbose logging for the failing component if available.'],
+ tags:['e_fail','unspecified','generic','event viewer']},
+{key:'win:0x8000ffff',code:'0x8000FFFF',title:'E_UNEXPECTED — Catastrophic failure',cat:'win',sev:'critical',
+ meaning:'The component hit a state it never expected — often corruption or a broken install.',
+ causes:['Corrupt application state or profile.','Damaged system files.','Failed update leaving a half-installed component.'],
+ steps:['Restart the application and try again.','Run sfc /scannow from an elevated prompt.','Reinstall/repair the application.'],
+ tags:['e_unexpected','catastrophic','corrupt','sfc']},
+{key:'win:0xc0000005',code:'0xC0000005',title:'STATUS_ACCESS_VIOLATION',cat:'win',sev:'critical',
+ meaning:'A program tried to read or write memory it does not own — the classic application crash code.',
+ causes:['Bug in the application (null/dangling pointer).','Faulty RAM or overclocking.','Bad driver or corrupt system file.'],
+ steps:['Note which program crashes and what you were doing — report it to the vendor.','Update the application and drivers.','Run Windows Memory Diagnostic if crashes are random across programs.','Check Event Viewer for the faulting module name.'],
+ tags:['access violation','crash','memory','0xc0000005']},
+{key:'win:0x80070422',code:'0x80070422',title:'Service cannot be started (disabled or no enabled devices)',cat:'win',sev:'error',
+ meaning:'Windows could not start a service because it is disabled (or its dependencies are).',
+ causes:['Service set to Disabled in services.msc.','Dependency service disabled.','Windows Update service disabled, breaking updates.'],
+ steps:['Open services.msc, find the service, set Startup type to Automatic/Manual.','Check the Dependencies tab and enable those services too.'],
+ tags:['service','disabled','services.msc','startup']},
+{key:'win:0x80070643',code:'0x80070643',title:'Fatal error during installation',cat:'win',sev:'error',
+ meaning:'An MSI/Windows Installer setup failed partway — the standard "installation failed" code.',
+ causes:['Corrupt installer download.','Conflicting older version still installed.','.NET Framework or Visual C++ redistributable issue.','Antivirus blocking the installer.'],
+ steps:['Re-download the installer (verify the hash if published).','Uninstall the old version first, then reinstall.','Temporarily disable AV during the install (re-enable after).','Check %TEMP% MSI logs for the exact failing action.'],
+ tags:['install','msi','setup','fatal error']},
+{key:'win:0x80072ee7',code:'0x80072EE7',title:'Server name or address could not be resolved',cat:'win',sev:'error',
+ meaning:'DNS resolution failed for the target host (WinHTTP/Windows Update style error).',
+ causes:['Wrong DNS server or no network.','Proxy misconfiguration.','Hosts file entry or typo in the hostname.'],
+ steps:['Ping the hostname — if it fails, it is DNS, not the app.','Try nslookup with 8.8.8.8 to bypass local DNS.','Check proxy settings and the hosts file.'],
+ tags:['dns','resolve','winhttp','windows update']},
+{key:'win:0x80072efd',code:'0x80072EFD',title:'Connection with the server could not be established',cat:'win',sev:'error',
+ meaning:'DNS worked but the TCP/TLS connection to the server failed.',
+ causes:['Server down or port blocked by firewall.','TLS/SSL handshake failure (old TLS version).','Proxy blocking the connection.'],
+ steps:['Test with Test-NetConnection -ComputerName <host> -Port <port>.','Check firewall rules on both ends.','Verify TLS versions match (older servers vs modern clients).'],
+ tags:['connection','firewall','tls','tcp']},
+{key:'win:0x8007007b',code:'0x8007007B',title:'Invalid name syntax (Win32 123)',cat:'win',sev:'error',
+ meaning:'The filename, directory name, or volume label has invalid syntax — often illegal characters.',
+ causes:['Characters like < > : " / \\ | ? * in the name.','Trailing dot or space in a folder name.','Badly formed UNC path.'],
+ steps:['Rename to remove illegal characters and trailing dots/spaces.','Quote paths with spaces in scripts.'],
+ tags:['invalid name','syntax','characters','path']},
+{key:'win:0x8007000e',code:'0x8007000E',title:'Out of memory (Win32 14)',cat:'win',sev:'critical',
+ meaning:'Windows could not allocate memory for the operation.',
+ causes:['System genuinely out of RAM/pagefile.','32-bit process hitting its ~2 GB limit.','Memory leak in the application.'],
+ steps:['Close unused programs and check Task Manager → Memory.','For 32-bit apps processing large data, look for a 64-bit build.','Watch the app\'s memory over time — steady growth means a leak to report.'],
+ tags:['out of memory','ram','leak','32-bit']},
+
+/* ---------------- Windows Win32 (plain numbers) ---------------- */
+{key:'win32:5',code:'5',title:'ERROR_ACCESS_DENIED — Access is denied',cat:'win32',sev:'error',
+ meaning:'The account lacks permission for the requested operation.',
+ causes:['NTFS ACLs deny the user.','Need elevation (admin rights).'],
+ steps:['Check Effective Access on the file/folder.','Run elevated if appropriate, or grant the specific permission.'],
+ tags:['access denied','permissions','acl']},
+{key:'win32:2',code:'2',title:'ERROR_FILE_NOT_FOUND',cat:'win32',sev:'error',
+ meaning:'The system cannot find the file specified.',
+ causes:['Typo in path; file moved or deleted.'],
+ steps:['Verify the path in Explorer; search for the filename.'],
+ tags:['file not found','missing']},
+{key:'win32:3',code:'3',title:'ERROR_PATH_NOT_FOUND',cat:'win32',sev:'error',
+ meaning:'The system cannot find the path specified — a folder in the chain is missing.',
+ causes:['Renamed/deleted intermediate folder; changed drive letter.'],
+ steps:['Walk each path segment; remap drives if needed.'],
+ tags:['path not found','folder']},
+{key:'win32:53',code:'53',title:'Network path not found',cat:'win32',sev:'error',
+ meaning:'Windows cannot reach the network share or computer name.',
+ causes:['Target PC off or renamed.','SMB blocked by firewall.','Wrong share name.'],
+ steps:['Ping the host; check it is powered on and on the network.','Verify the share name (\\\\PC\\Share).','Check SMB/file-sharing firewall rules.'],
+ tags:['network path','smb','share','unc']},
+{key:'win32:67',code:'67',title:'Network name cannot be found',cat:'win32',sev:'error',
+ meaning:'The share name does not exist on the target computer.',
+ causes:['Typo in the share name.','Share removed or never created.'],
+ steps:['List shares on the target (net view \\\\PC) and copy the exact name.'],
+ tags:['share','network name','smb']},
+{key:'win32:1326',code:'1326',title:'Logon failure — unknown user name or bad password',cat:'win32',sev:'error',
+ meaning:'The credentials were rejected by the target machine/domain.',
+ causes:['Wrong username or password.','Account in the wrong domain.','Cached stale credentials.'],
+ steps:['Re-type carefully (watch Caps Lock and keyboard layout).','Use domain\\username format for domain logons.','Clear cached credentials in Credential Manager if they changed recently.'],
+ tags:['logon','password','credentials','domain']},
+{key:'win32:1327',code:'1327',title:'Account restrictions preventing logon',cat:'win32',sev:'error',
+ meaning:'The password is right, but policy blocks this logon (hours, workstation, password expiry).',
+ causes:['Logon hours restriction.','Account not allowed on this workstation.','"User must change password at next logon" with no way to do so.'],
+ steps:['Check the account properties in AD: Logon Hours, Log On To, Account Expires.','Have an admin clear "must change password" or reset it.'],
+ tags:['account','policy','restrictions','active directory']},
+{key:'win32:1909',code:'1909',title:'Account locked out',cat:'win32',sev:'warning',
+ meaning:'Too many bad password attempts locked the account.',
+ causes:['User typo-ing the password repeatedly.','A service or mapped drive using an old cached password.'],
+ steps:['Wait for the lockout timer or have an admin unlock it in AD.','Find the source of bad attempts (stale saved passwords are the #1 cause).','Reset the password if the user cannot recall it.'],
+ tags:['locked out','lockout','password','active directory']},
+{key:'win32:1058',code:'1058',title:'Service disabled — cannot be started',cat:'win32',sev:'error',
+ meaning:'The service is set to Disabled, so Windows refuses to start it.',
+ causes:['Hardened image or GPO disabled the service.'],
+ steps:['Set the service Startup type to Manual or Automatic in services.msc.'],
+ tags:['service','disabled']},
+{key:'win32:1060',code:'1060',title:'Service does not exist',cat:'win32',sev:'error',
+ meaning:'The named service is not installed on this machine.',
+ causes:['Wrong service name.','Software not installed / partially uninstalled.'],
+ steps:['List services (sc query) and copy the exact SERVICE_NAME.','Reinstall the software that provides the service.'],
+ tags:['service','not installed']},
+{key:'win32:1067',code:'1067',title:'Service terminated unexpectedly',cat:'win32',sev:'error',
+ meaning:'The service process crashed.',
+ causes:['Bug in the service.','Missing dependency (config file, database).'],
+ steps:['Check Event Viewer → System/Application for the crash details.','Verify the service\'s dependencies and config files exist.'],
+ tags:['service','crash','terminated']},
+{key:'win32:1075',code:'1075',title:'Dependency service failed to start',cat:'win32',sev:'error',
+ meaning:'This service depends on another service that is missing or failed.',
+ causes:['Dependency disabled or deleted.','Dependency itself crashing.'],
+ steps:['Open the Dependencies tab in services.msc and start/repair each dependency.'],
+ tags:['service','dependency']},
+
+/* ---------------- POSIX / Node errno ---------------- */
+{key:'posix:eacces',code:'EACCES',title:'Permission denied',cat:'posix',sev:'error',
+ meaning:'The process is not allowed to access the file — the Unix equivalent of Windows "Access is denied".',
+ causes:['File owned by another user with no read/write bit for you.','Trying to bind a port < 1024 as non-root.','Script missing the execute bit.'],
+ steps:['Check ownership and bits: ls -l <file>.','Use sudo only if the task truly needs it — prefer fixing ownership (chown) or bits (chmod).','For ports < 1024: use a high port, or grant the capability (setcap) instead of running as root.'],
+ tags:['permission denied','chmod','chown','sudo']},
+{key:'posix:eaddrinuse',code:'EADDRINUSE',title:'Address already in use',cat:'posix',sev:'error',
+ meaning:'Another process is already listening on that port (or the port is in TIME_WAIT).',
+ causes:['Two instances of the app running.','Previous instance did not shut down cleanly.','Hardcoded port colliding with another service.'],
+ steps:['Find the holder: ss -tlnp | grep <port> (Linux) or lsof -i :<port> (macOS).','Stop the other process, or configure your app to use a free port.'],
+ tags:['port','already in use','bind','lsof']},
+{key:'posix:eagain',code:'EAGAIN',title:'Resource temporarily unavailable',cat:'posix',sev:'warning',
+ meaning:'A non-blocking operation would have blocked — usually safe to retry.',
+ causes:['Non-blocking socket with no data yet.','Too many processes hitting a limit momentarily.'],
+ steps:['Retry with a short backoff.','If constant, the app may need proper async handling.'],
+ tags:['retry','non-blocking','temporarily']},
+{key:'posix:ebusy',code:'EBUSY',title:'Device or resource busy',cat:'posix',sev:'error',
+ meaning:'The file or mount point is in use and cannot be changed right now.',
+ causes:['Trying to unmount a filesystem that has open files.','Deleting a file a process holds open.'],
+ steps:['Find users of the resource: lsof <path> / fuser -m <mount>.','Stop those processes, then retry.'],
+ tags:['busy','mount','lsof','unmount']},
+{key:'posix:econnrefused',code:'ECONNREFUSED',title:'Connection refused',cat:'posix',sev:'error',
+ meaning:'The host is reachable, but nothing is listening on that port.',
+ causes:['Service not running or listening on a different port/interface.','Firewall REJECT rule (vs DROP, which gives a timeout).'],
+ steps:['Verify the service is up: ss -tlnp | grep <port>.','Check it binds 0.0.0.0 vs 127.0.0.1 — a service on localhost is unreachable from other machines.','Confirm the client uses the right host and port.'],
+ tags:['connection refused','port','service down','firewall']},
+{key:'posix:econnreset',code:'ECONNRESET',title:'Connection reset by peer',cat:'posix',sev:'warning',
+ meaning:'The other side abruptly closed the connection (sent RST).',
+ causes:['Server crashed mid-request.','Timeout on the server side.','Load balancer killing idle connections.'],
+ steps:['Check server logs for a crash around that time.','Retry — often transient.','If frequent, investigate keepalive/idle-timeout mismatches.'],
+ tags:['reset','rst','peer','crash']},
+{key:'posix:ehostunreach',code:'EHOSTUNREACH',title:'No route to host',cat:'posix',sev:'error',
+ meaning:'The network stack has no route to the destination — a routing problem, not a dead server.',
+ causes:['Wrong gateway/subnet mask.','VPN tunnel down.','Host on an unreachable network segment.'],
+ steps:['Check ip route / route print and the default gateway.','Verify VPN status if the host is remote.','Ping the gateway first to split routing vs remote failure.'],
+ tags:['route','gateway','vpn','unreachable']},
+{key:'posix:eisdir',code:'EISDIR',title:'Is a directory',cat:'posix',sev:'error',
+ meaning:'You tried a file operation on a directory (e.g. reading it as a file).',
+ causes:['Script passed a folder where a file was expected.','Trailing slash confusion in paths.'],
+ steps:['Check whether the path is a directory: ls -ld <path>.','Fix the script to handle directories or point at the right file.'],
+ tags:['directory','is a directory','path']},
+{key:'posix:emfile',code:'EMFILE',title:'Too many open files',cat:'posix',sev:'error',
+ meaning:'The process hit its file-descriptor limit — it leaked handles or needs a higher limit.',
+ causes:['App opening files/sockets without closing them.','ulimit -n set too low for the workload.'],
+ steps:['Check the limit: ulimit -n; inspect open handles: ls /proc/<pid>/fd | wc -l.','Fix the leak (unclosed files/sockets) — raising the limit only buys time.','Raise the limit via systemd LimitNOFILE= or ulimit if legitimate.'],
+ tags:['open files','ulimit','file descriptor','leak']},
+{key:'posix:enametoolong',code:'ENAMETOOLONG',title:'File name too long',cat:'posix',sev:'error',
+ meaning:'A path component exceeds the filesystem limit (usually 255 bytes).',
+ causes:['Deeply nested folders.','Overly long generated filenames.'],
+ steps:['Shorten directory/file names.','Move the tree closer to the filesystem root.'],
+ tags:['filename','too long','path']},
+{key:'posix:enoent',code:'ENOENT',title:'No such file or directory',cat:'posix',sev:'error',
+ meaning:'A component of the path does not exist — the Unix "file not found".',
+ causes:['Typo in the path.','File not yet created / already deleted.','Relative path resolved from an unexpected working directory.'],
+ steps:['List each path segment: ls each level.','Print the working directory (pwd) — relative paths bite here.','Check for hidden characters or trailing spaces in the name.'],
+ tags:['no such file','not found','path','enoent']},
+{key:'posix:enospc',code:'ENOSPC',title:'No space left on device',cat:'posix',sev:'critical',
+ meaning:'The disk (or inode table) is full — writes will fail until space is freed.',
+ causes:['Disk full of logs/backups.','Inodes exhausted by millions of tiny files (df -i).','Deleted-but-still-open files hiding usage (lsof | grep deleted).'],
+ steps:['Check both: df -h (space) and df -i (inodes).','Find the biggest consumers: du -sh /* sorted.','Rotate/truncate logs; do NOT just rm a file a process still holds — restart the process or truncate it.'],
+ tags:['disk full','no space','inode','df']},
+{key:'posix:enotdir',code:'ENOTDIR',title:'Not a directory',cat:'posix',sev:'error',
+ meaning:'A path component that should be a directory is actually a file.',
+ causes:['Typo: /etc/hosts/backup when /etc/hosts is a file.','Script building paths wrong.'],
+ steps:['Inspect the path with ls -l to find the file-posing-as-folder.','Fix the path construction in the script/config.'],
+ tags:['not a directory','path']},
+{key:'posix:enotfound',code:'ENOTFOUND',title:'DNS lookup failed (getaddrinfo ENOTFOUND)',cat:'posix',sev:'error',
+ meaning:'Node.js could not resolve the hostname — the Node-flavoured NXDOMAIN.',
+ causes:['Typo in the hostname.','No network / DNS server unreachable.','Container missing DNS config.'],
+ steps:['Verify the hostname spelling.','Test resolution: nslookup <host> / getent hosts <host>.','Check /etc/resolv.conf and network connectivity.'],
+ tags:['dns','node','getaddrinfo','resolve']},
+{key:'posix:eperm',code:'EPERM',title:'Operation not permitted',cat:'posix',sev:'error',
+ meaning:'The operation is forbidden entirely — even the file owner may be blocked (stricter than EACCES).',
+ causes:['Immutable file attribute (chattr +i).','Operation needs a capability (e.g. raw sockets) the process lacks.','Read-only filesystem.'],
+ steps:['Check attributes: lsattr <file>.','Check mount options: mount | grep <fs> (look for ro).','Grant the specific capability instead of full root where possible.'],
+ tags:['not permitted','immutable','capability','chattr']},
+{key:'posix:epipe',code:'EPIPE',title:'Broken pipe',cat:'posix',sev:'warning',
+ meaning:'You wrote to a pipe/socket whose reader already went away.',
+ causes:['Piping into head (it exits early by design).','Client disconnected before the server finished responding.'],
+ steps:['Usually harmless — handle SIGPIPE or check for closed readers.','If in a pipeline with head, it is expected behaviour, not a bug.'],
+ tags:['broken pipe','sigpipe','head']},
+{key:'posix:etimedout',code:'ETIMEDOUT',title:'Connection timed out',cat:'posix',sev:'warning',
+ meaning:'No answer at all — packets went out and nothing came back (vs ECONNREFUSED, which is an active rejection).',
+ causes:['Firewall silently dropping packets.','Server overloaded or hung.','Wrong IP address.'],
+ steps:['Ping and traceroute to see how far packets get.','Check firewall rules on both ends.','Increase the client timeout only after confirming the network path is healthy.'],
+ tags:['timeout','timed out','firewall','traceroute']},
+
+/* ---------------- SMTP ---------------- */
+{key:'smtp:421',code:'421',title:'Service not available (temporary)',cat:'smtp',sev:'warning',
+ meaning:'The mail server is temporarily refusing connections — retry later.',
+ causes:['Greylisting (server asks you to retry).','Server overloaded or in maintenance.'],
+ steps:['Retry after a few minutes — 421 explicitly invites a retry.','Check the receiving server status page.'],
+ tags:['smtp','mail','greylisting','retry']},
+{key:'smtp:450',code:'450',title:'Mailbox unavailable (temporary)',cat:'smtp',sev:'warning',
+ meaning:'The recipient mailbox is temporarily unavailable — the message was NOT rejected permanently.',
+ causes:['Recipient mailbox full or locked.','Greylisting.'],
+ steps:['The sending server will retry automatically; do not resend manually yet.','If it persists for days, contact the recipient another way.'],
+ tags:['smtp','mailbox','temporary','mail']},
+{key:'smtp:451',code:'451',title:'Local error processing (temporary)',cat:'smtp',sev:'warning',
+ meaning:'The receiving server hit a local error — retry later.',
+ causes:['Server-side resource issue.','Anti-spam filter hiccup.'],
+ steps:['Retry later; check for a bounce after 24–48h.','Verify your sending IP is not on a blocklist.'],
+ tags:['smtp','temporary','mail']},
+{key:'smtp:452',code:'452',title:'Insufficient storage',cat:'smtp',sev:'warning',
+ meaning:'The receiving server is out of storage for this message.',
+ causes:['Recipient mailbox over quota.','Server disk full.'],
+ steps:['Ask the recipient to free mailbox space.','Try again later.'],
+ tags:['smtp','quota','storage','mail']},
+{key:'smtp:550',code:'550',title:'Mailbox unavailable (permanent)',cat:'smtp',sev:'error',
+ meaning:'The message was permanently rejected — most famously "mailbox unavailable" or "user unknown".',
+ causes:['Typo in the email address.','Recipient address deleted.','Your IP/domain blocked as spam (check the enhanced status code, e.g. 5.7.1).'],
+ steps:['Verify the address spelling with the recipient.','Check the full bounce text — the 5.x.x code after 550 names the real reason.','If 5.7.1: check SPF/DKIM/DMARC and IP blocklists (MXToolbox).'],
+ tags:['smtp','bounce','mailbox','user unknown','spam']},
+{key:'smtp:551',code:'551',title:'User not local — try forwarding address',cat:'smtp',sev:'warning',
+ meaning:'The user does not exist here, but the server suggests an address to try.',
+ causes:['User moved to another mail system.','Typo in the domain part.'],
+ steps:['Use the forwarding address given in the bounce.','Confirm the correct address with the recipient.'],
+ tags:['smtp','forward','mail']},
+{key:'smtp:552',code:'552',title:'Message too large',cat:'smtp',sev:'error',
+ meaning:'The message (usually attachments) exceeds the server limit.',
+ causes:['Oversized attachments.'],
+ steps:['Compress attachments or share via a link instead.','Check the server\'s size limit.'],
+ tags:['smtp','attachment','too large','mail']},
+{key:'smtp:553',code:'553',title:'Mailbox name invalid',cat:'smtp',sev:'error',
+ meaning:'The address syntax is bad or the mailbox name is not allowed.',
+ causes:['Typo or illegal characters in the address.','Missing @domain part.'],
+ steps:['Fix the address syntax.','Verify the domain exists.'],
+ tags:['smtp','invalid address','syntax','mail']},
+{key:'smtp:554',code:'554',title:'Transaction failed (permanent)',cat:'smtp',sev:'error',
+ meaning:'The message was rejected outright — often a spam/policy rejection.',
+ causes:['Failed SPF/DKIM/DMARC.','IP on a blocklist.','Message tripped content filters.'],
+ steps:['Read the full bounce — the 5.x.x code explains the policy hit.','Fix SPF/DKIM/DMARC records.','Check blocklists and request delisting if needed.'],
+ tags:['smtp','spam','rejected','dmarc','spf']},
+
+/* ---------------- DNS & browser network ---------------- */
+{key:'dns:nxdomain',code:'NXDOMAIN',title:'DNS: domain does not exist',cat:'dns',sev:'error',
+ meaning:'DNS says this name does not exist at all — the DNS equivalent of a 404.',
+ causes:['Typo in the hostname.','Record deleted or never created.','Wrong DNS server answering.'],
+ steps:['Double-check spelling.','Query directly: nslookup <host> 8.8.8.8.','Check the authoritative zone for the record.'],
+ tags:['dns','nxdomain','resolve','nslookup']},
+{key:'dns:servfail',code:'SERVFAIL',title:'DNS: server failure',cat:'dns',sev:'error',
+ meaning:'The DNS server failed to answer — usually a misconfigured authoritative server or DNSSEC breakage.',
+ causes:['Broken DNSSEC chain.','Authoritative server misconfigured or down.'],
+ steps:['Test with another resolver (1.1.1.1) to isolate your server.','Check DNSSEC with an online validator.','Contact the domain\'s DNS administrator.'],
+ tags:['dns','servfail','dnssec']},
+{key:'dns:refused',code:'REFUSED',title:'DNS: query refused',cat:'dns',sev:'error',
+ meaning:'The DNS server refused to answer — often a policy or recursion issue.',
+ causes:['Server not configured to recurse for you.','ACL blocking your IP.'],
+ steps:['Switch to a public resolver (1.1.1.1 / 8.8.8.8) as a test.','Check firewall rules for port 53.'],
+ tags:['dns','refused','recursion']},
+{key:'dns:timeout',code:'DNS TIMEOUT',title:'DNS: query timed out',cat:'dns',sev:'warning',
+ meaning:'No DNS server answered in time.',
+ causes:['DNS server down or firewalled.','Wrong DNS IP configured.'],
+ steps:['Ping your configured DNS server.','Try a public resolver to confirm.','Check local firewall for outbound port 53.'],
+ tags:['dns','timeout']},
+{key:'dns:err_name_not_resolved',code:'ERR_NAME_NOT_RESOLVED',title:'Chrome: name not resolved',cat:'dns',sev:'error',
+ meaning:'Chrome could not resolve the hostname — NXDOMAIN in browser clothing.',
+ causes:['Typo in the URL.','DNS down or captive portal intercepting.','Stale negative DNS cache.'],
+ steps:['Check the URL spelling.','Flush DNS: ipconfig /flushdns (Windows) or restart the browser.','Try another network to rule out captive portals.'],
+ tags:['chrome','dns','resolve','browser']},
+{key:'dns:err_connection_timed_out',code:'ERR_CONNECTION_TIMED_OUT',title:'Chrome: connection timed out',cat:'dns',sev:'warning',
+ meaning:'Chrome got no response from the server at all.',
+ causes:['Server down or firewalled.','Wrong IP/port.'],
+ steps:['Check the site from another network/device.','Verify the server is listening (see ECONNREFUSED vs ETIMEDOUT).'],
+ tags:['chrome','timeout','browser']},
+{key:'dns:err_connection_refused',code:'ERR_CONNECTION_REFUSED',title:'Chrome: connection refused',cat:'dns',sev:'error',
+ meaning:'Chrome reached the host but nothing listens on the port.',
+ causes:['Web server stopped.','Wrong port in the URL.'],
+ steps:['Confirm the web server is running on the target port.','Check for typos in the port number.'],
+ tags:['chrome','refused','browser']},
+{key:'dns:err_ssl_protocol_error',code:'ERR_SSL_PROTOCOL_ERROR',title:'Chrome: SSL protocol error',cat:'dns',sev:'error',
+ meaning:'The TLS handshake failed — client and server could not agree on how to encrypt.',
+ causes:['Server only supports old TLS versions.','Antivirus/proxy intercepting TLS.','Wrong port (plain HTTP on 443).'],
+ steps:['Test the site\'s TLS with an online checker (SSL Labs).','Temporarily disable TLS-scanning AV/proxy as a test.','Ensure the URL uses https:// on port 443.'],
+ tags:['chrome','ssl','tls','handshake','browser']},
+{key:'dns:err_cert_authority_invalid',code:'ERR_CERT_AUTHORITY_INVALID',title:'Chrome: certificate authority invalid',cat:'dns',sev:'warning',
+ meaning:'The site\'s certificate was not issued by a trusted authority.',
+ causes:['Self-signed or internal-CA certificate.','Corporate TLS inspection proxy.','Expired/misconfigured cert chain.'],
+ steps:['On a work network: install the corporate CA or accept via IT policy — do NOT just click through on unknown networks.','Check the certificate dates and chain in the browser padlock dialog.'],
+ tags:['chrome','certificate','cert','ca','browser']},
+{key:'dns:err_internet_disconnected',code:'ERR_INTERNET_DISCONNECTED',title:'Chrome: no internet connection',cat:'dns',sev:'warning',
+ meaning:'The browser detects no working network connection at all.',
+ causes:['Wi-Fi dropped.','Airplane mode.','Router/ISP outage.'],
+ steps:['Check Wi-Fi / airplane mode.','Restart the router.','Test another device on the same network.'],
+ tags:['chrome','offline','network','browser']},
+{key:'dns:err_network_changed',code:'ERR_NETWORK_CHANGED',title:'Chrome: network changed',cat:'dns',sev:'info',
+ meaning:'The network changed mid-session (Wi-Fi roam, VPN connect/disconnect). Usually harmless — reload.',
+ causes:['Switched Wi-Fi networks.','VPN connected or dropped.'],
+ steps:['Reload the page.','If it repeats, check for a flapping VPN or Wi-Fi adapter.'],
+ tags:['chrome','network','vpn','browser']},
+
+/* ---------------- Browser & JavaScript ---------------- */
+{key:'js:failed_to_fetch',code:'Failed to fetch',title:'JS: "Failed to fetch" / TypeError: Failed to fetch',cat:'js',sev:'error',
+ meaning:'A fetch() call failed before getting any HTTP response — a network-level failure, not an HTTP error code.',
+ causes:['Server unreachable (see ERR_CONNECTION_*).','CORS rejection (check the console for the CORS message).','Ad-blocker or extension killing the request.','Mixed content (https page calling http API).'],
+ steps:['Open DevTools → Network: is the request even sent? Red = never left the browser.','Check the Console for a CORS error — the fix is server-side headers.','Test the API URL directly in the address bar.','Disable extensions and retry.'],
+ tags:['fetch','javascript','cors','network','api']},
+{key:'js:cors',code:'CORS error',title:'JS: CORS — No Access-Control-Allow-Origin header',cat:'js',sev:'error',
+ meaning:'The browser blocked the response because the server did not permit this origin. A security feature, not a bug in your code.',
+ causes:['API missing Access-Control-Allow-Origin for your domain.','Credentials mode without Access-Control-Allow-Credentials.','Preflight (OPTIONS) rejected.'],
+ steps:['The fix is on the SERVER: add the origin to Access-Control-Allow-Origin.','For local dev, proxy the API through your own dev server.','Do not disable browser security as a "fix" for production.'],
+ tags:['cors','javascript','fetch','api','origin']},
+{key:'js:not_a_function',code:'TypeError: X is not a function',title:'JS: "…is not a function"',cat:'js',sev:'error',
+ meaning:'You called something that is not callable — a typo, a wrong import, or the value is undefined at call time.',
+ causes:['Typo in the function name.','Imported the wrong export (default vs named).','Variable shadowed or reassigned.','Calling a method on a jQuery/DOM object that does not have it.'],
+ steps:['console.log the value right before the call — what is it really?','Check the import/export names match.','Read the stack trace: the line number points at the bad call.'],
+ tags:['javascript','typeerror','function','import']},
+{key:'js:not_defined',code:'ReferenceError: X is not defined',title:'JS: "…is not defined"',cat:'js',sev:'error',
+ meaning:'The variable was never declared in this scope — a typo or a missing import/script tag.',
+ causes:['Typo in the variable name.','Script loaded in the wrong order.','Block-scoped (let/const) variable used outside its block.'],
+ steps:['Check spelling and case — JS is case-sensitive.','Verify the script that defines it loads BEFORE this one.','Check DevTools → Sources to confirm the file actually loaded.'],
+ tags:['javascript','referenceerror','undefined','scope']},
+{key:'js:unexpected_token',code:'SyntaxError: Unexpected token',title:'JS: "Unexpected token"',cat:'js',sev:'error',
+ meaning:'The JavaScript could not even be parsed — a syntax error, often a stray bracket or comma.',
+ causes:['Missing/extra bracket, brace, or parenthesis.','Trailing comma in older parsers.','Server returned HTML (e.g. a 404 page) where JSON/JS was expected.'],
+ steps:['The error names the line — look just BEFORE it.','If it happens on JSON.parse: log the raw text; you probably got an HTML error page, not JSON.','Paste the code into a linter/formatter to spot the imbalance.'],
+ tags:['javascript','syntax','json','parse']},
+{key:'js:cannot_read_properties',code:'TypeError: Cannot read properties of null/undefined',title:'JS: "Cannot read properties of null"',cat:'js',sev:'error',
+ meaning:'You accessed .something on a value that is null or undefined — the #1 runtime error in frontend code.',
+ causes:['API returned null where an object was expected.','DOM element not found (wrong id, script ran before the element existed).','Async data not loaded yet when the code ran.'],
+ steps:['console.log the parent object before the failing line.','Guard with optional chaining (obj?.prop) or an explicit null check.','Ensure DOM code runs after the element exists (script at end of body / DOMContentLoaded).'],
+ tags:['javascript','typeerror','null','undefined']},
+{key:'js:promise_rejection',code:'Uncaught (in promise)',title:'JS: "Uncaught (in promise)"',cat:'js',sev:'warning',
+ meaning:'A Promise rejected and nothing caught it. The real error is nested inside — expand it in the console.',
+ causes:['fetch() to a failing endpoint without .catch().','async function throwing without try/catch.'],
+ steps:['Expand the error in DevTools to see the underlying cause.','Add .catch() / try-catch around the async call.','Treat it as a symptom — fix the inner error.'],
+ tags:['javascript','promise','async','unhandled']},
+{key:'js:call_stack',code:'RangeError: Maximum call stack size exceeded',title:'JS: "Maximum call stack size exceeded"',cat:'js',sev:'error',
+ meaning:'Infinite (or far too deep) recursion blew the call stack.',
+ causes:['Function calling itself without a proper base case.','Two functions calling each other in a cycle.','Accidental recursion via getters/event handlers.'],
+ steps:['Check the stack trace — the repeating frames name the culprit.','Add/verify the termination condition.','For deep-but-legitimate recursion, rewrite iteratively.'],
+ tags:['javascript','recursion','stack','rangeerror']},
+{key:'js:quota',code:'QuotaExceededError',title:'JS: "QuotaExceededError" (storage full)',cat:'js',sev:'warning',
+ meaning:'localStorage/sessionStorage/IndexedDB is full or blocked — the write was refused.',
+ causes:['Storing too much in localStorage (5–10 MB limit).','Private/incognito mode blocking storage.'],
+ steps:['Store less, or move large data to IndexedDB.','Wrap storage writes in try/catch and degrade gracefully.'],
+ tags:['javascript','localstorage','storage','quota']},
+{key:'js:json_parse',code:'JSON.parse: unexpected character',title:'JS: "JSON.parse: unexpected character at line 1 column 1"',cat:'js',sev:'error',
+ meaning:'The text is not valid JSON — column 1 means the very first character is wrong, which usually means you got HTML, not JSON.',
+ causes:['API returned an HTML error page (check the Network tab).','BOM or stray characters prepended (common with PHP echo before json_encode).','Empty response body.'],
+ steps:['Log/show the raw response text before parsing.','Check the Network tab: status code and Content-Type of the response.','For PHP backends: make sure nothing is echoed before the JSON.'],
+ tags:['javascript','json','parse','php','api']}
+];
+
+/* ---------------- helpers ---------------- */
+function byKey(key){ return DB.find(e => e.key === key) || null; }
+
+/* Decode a Windows HRESULT into severity / facility / code.
+   Layout (32 bits): [31]=severity 1=fail [30]=reserved [29]=customer
+   [28]=NTSTATUS-mapped [27..16]=facility [15..0]=code                    */
+const FACILITIES = {
+  0:'FACILITY_NULL', 1:'FACILITY_RPC', 2:'FACILITY_DISPATCH', 3:'FACILITY_STORAGE',
+  4:'FACILITY_ITF', 7:'FACILITY_WIN32', 8:'FACILITY_WINDOWS', 9:'FACILITY_SSPI',
+  10:'FACILITY_CONTROL', 11:'FACILITY_CERT', 12:'FACILITY_INTERNET', 13:'FACILITY_MEDIASERVER',
+  19:'FACILITY_AAF', 21:'FACILITY_URT (.NET)', 22:'FACILITY_ACS', 31:'FACILITY_USERMODE_COMMONLOG'
+};
+function facilityName(n){ return FACILITIES[n] || ('facility ' + n + ' (undocumented/other)'); }
+
+function decodeHresult(input){
+  // accept '0x80070005', '80070005', or signed decimal '-2147024891'
+  let s = String(input).trim().toLowerCase();
+  let u;
+  if (/^0x[0-9a-f]{1,8}$/.test(s)) u = parseInt(s, 16) >>> 0;
+  else if (/^[0-9a-f]{1,8}$/.test(s) && /[a-f]/.test(s)) u = parseInt(s, 16) >>> 0;
+  else if (/^-?\d+$/.test(s)) u = (parseInt(s, 10) >>> 0);
+  else return null;
+  const hex = '0x' + u.toString(16).toUpperCase().padStart(8, '0');
+  const severity = (u >>> 31) & 1;
+  const facility = (u >>> 16) & 0xFFF;   // bits 27..16 (12 bits; top bit overlaps reserved area, fine for display)
+  const code = u & 0xFFFF;
+  let mapped = null;
+  if (facility === 7) {  // FACILITY_WIN32: low 16 bits ARE the Win32 error
+    mapped = byKey('win32:' + code);
+  }
+  return { hex, severity, severityText: severity ? 'FAILURE' : 'SUCCESS',
+           facility, facilityText: facilityName(facility),
+           code, codeHex: '0x' + code.toString(16).toUpperCase().padStart(4, '0'),
+           win32Mapped: mapped ? mapped : null };
+}
+
+/* Normalize raw user input into a lookup key candidate list. */
+function normalize(raw){
+  let s = String(raw || '').trim().toLowerCase();
+  if (!s) return { keys: [], cleaned: s };
+  // strip common prefixes people paste
+  s = s.replace(/^(error|errno|status|http|code|#)\s*:?\s+/, '');
+  s = s.replace(/^["']|["']$/g, '');
+  const keys = [];
+  // hex HRESULT
+  if (/^0x[0-9a-f]{1,8}$/.test(s)) keys.push('win:' + s);
+  else if (/^-?\d+$/.test(s)) {
+    const n = parseInt(s, 10);
+    if (n < 0) keys.push('win:0x' + ((n >>> 0).toString(16)));       // signed decimal HRESULT
+    else {
+      if (byKey('http:' + n)) keys.push('http:' + n);
+      if (byKey('smtp:' + n)) keys.push('smtp:' + n);
+      if (byKey('win32:' + n)) keys.push('win32:' + n);
+      // long digit strings are pasted HRESULTs without the 0x prefix:
+      // try as hex digits first, then as unsigned decimal HRESULT
+      if (s.length > 4) {
+        keys.push('win:0x' + s);
+        keys.push('win:0x' + ((n >>> 0).toString(16)));
+      }
+    }
+  }
+  else if (/^e[a-z]+$/.test(s) && byKey('posix:' + s)) keys.push('posix:' + s);
+  else if (/^nxdomain|servfail|refused$/.test(s) && byKey('dns:' + s)) keys.push('dns:' + s);
+  else if (/^dns\s/.test(s) && byKey('dns:' + s.slice(4).trim())) keys.push('dns:' + s.slice(4).trim());
+  else if (/^err_/.test(s)) {
+    const k = 'dns:' + s;
+    if (byKey(k)) keys.push(k);
+  }
+  return { keys, cleaned: s };
+}
+
+/* Exact lookup: returns the entry or null. */
+function lookup(raw){
+  const { keys } = normalize(raw);
+  for (const k of keys) { const e = byKey(k); if (e) return e; }
+  // try matching the raw string against keys/codes directly (covers phrases)
+  const s = String(raw || '').trim().toLowerCase();
+  const direct = DB.find(e => e.code.toLowerCase() === s || e.key === s);
+  if (direct) return direct;
+  return null;
+}
+
+/* Ranked search across title / code / tags / meaning. */
+function search(query, cat){
+  const q = String(query || '').trim().toLowerCase();
+  if (!q) return [];
+  const words = q.split(/\s+/);
+  const out = [];
+  for (const e of DB) {
+    if (cat && cat !== 'all' && e.cat !== cat) continue;
+    let score = 0;
+    const codeL = e.code.toLowerCase(), titleL = e.title.toLowerCase();
+    if (codeL === q) score += 100;
+    else if (codeL.replace(/^0x/, '') === q.replace(/^0x/, '') && q.length > 2) score += 95;
+    if (e.key === q) score += 100;
+    for (const a of (e.tags || [])) if (a === q) score += 85;
+    if (titleL.includes(q)) score += 60;
+    else {
+      let hit = 0;
+      for (const w of words) {
+        if (titleL.includes(w)) hit += 12;
+        for (const a of (e.tags || [])) if (a.includes(w)) hit += 10;
+        if (e.meaning.toLowerCase().includes(w)) hit += 4;
+      }
+      score += Math.min(hit, 55);
+    }
+    if (score > 0) out.push({ entry: e, score });
+  }
+  out.sort((a, b) => b.score - a.score || a.entry.code.localeCompare(b.entry.code));
+  return out.slice(0, 12);
+}
+
+/* One-line ticket-ready summary for copy/paste. */
+function ticketText(entry, rawInput){
+  const lines = [];
+  lines.push('Error: ' + (rawInput || entry.code).trim() + ' — ' + entry.title);
+  lines.push('Category: ' + (CATS.find(c => c.id === entry.cat) || {}).label);
+  lines.push('Meaning: ' + entry.meaning);
+  lines.push('Likely causes: ' + entry.causes.join(' | '));
+  lines.push('Next steps: ' + entry.steps.join(' | '));
+  return lines.join('\n');
+}
+
+/* Exported for the test harness (and the UI block below reuses them). */
+var __errLogic = { DB, CATS, normalize, lookup, search, decodeHresult, facilityName, ticketText, byKey };
+</script>
+
+<script>
+/* =====================================================================
+ * DecodeX — UI layer. Uses the __errLogic surface from the first block.
+ * =================================================================== */
+(function(){
+  'use strict';
+  var L = window.__errLogic || (typeof __errLogic !== 'undefined' ? __errLogic : null);
+  if (!L) { document.getElementById('out').textContent = 'Logic failed to load.'; return; }
+
+  var q = document.getElementById('q'), go = document.getElementById('go'),
+      out = document.getElementById('out'), chipsEl = document.getElementById('chips');
+  var activeCat = 'all';
+
+  /* category filter chips */
+  function renderChips(){
+    chipsEl.innerHTML = '';
+    var mk = function(id, label){
+      var b = document.createElement('button');
+      b.className = 'chip' + (activeCat === id ? ' active' : '');
+      b.textContent = label;
+      b.onclick = function(){ activeCat = id; renderChips(); if (q.value.trim()) decode(); };
+      chipsEl.appendChild(b);
+    };
+    mk('all', 'All');
+    L.CATS.forEach(function(c){ mk(c.id, c.label); });
+  }
+
+  function esc(s){
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  function sevBadge(sev){
+    var label = {info:'INFO', warning:'WARNING', error:'ERROR', critical:'CRITICAL'}[sev] || sev;
+    return '<span class="badge sev-' + sev + '">' + label + '</span>';
+  }
+  function catLabel(id){ var c = L.CATS.find(function(x){return x.id===id;}); return c ? c.label : id; }
+
+  function resultCard(entry, rawInput){
+    var html = '<div class="card">';
+    html += '<h2>' + esc(entry.code) + '</h2>';
+    html += '<div class="meta"><span class="badge cat">' + esc(catLabel(entry.cat)) + '</span>' +
+            sevBadge(entry.sev) + '</div>';
+    html += '<div style="font-size:1.15rem;font-weight:600">' + esc(entry.title) + '</div>';
+    html += '<p class="meaning">' + esc(entry.meaning) + '</p>';
+
+    /* HRESULT bit breakdown when the input was Windows hex */
+    if (entry.cat === 'win') {
+      var h = L.decodeHresult(rawInput);
+      if (h) {
+        html += '<h3>Bit breakdown of ' + esc(h.hex) + '</h3><div class="hres">';
+        html += '<div><small>Severity (bit 31)</small><b>' + h.severityText + '</b></div>';
+        html += '<div><small>Facility (bits 27–16)</small><b>' + h.facility + '</b><br>' + esc(h.facilityText) + '</div>';
+        html += '<div><small>Code (bits 15–0)</small><b>' + h.code + '</b> (' + esc(h.codeHex) + ')</div>';
+        html += '</div>';
+        if (h.win32Mapped && h.win32Mapped.key !== entry.key) {
+          html += '<p class="hint">FACILITY_WIN32: low 16 bits map to Win32 error ' + h.code + ' — ' +
+                  esc(h.win32Mapped.title) + '</p>';
+        }
+      }
+    }
+
+    html += '<h3>Likely causes</h3><ul class="tight">' +
+            entry.causes.map(function(c){ return '<li>' + esc(c) + '</li>'; }).join('') + '</ul>';
+    html += '<h3>Troubleshooting steps</h3><ol class="tight">' +
+            entry.steps.map(function(s){ return '<li>' + esc(s) + '</li>'; }).join('') + '</ol>';
+    html += '<div class="btnrow">' +
+            '<button class="ghost" id="copyBtn">Copy ticket summary</button>' +
+            '<button class="ghost" id="clearBtn">Clear</button></div>';
+    html += '</div>';
+    return html;
+  }
+
+  function unknownCard(rawInput){
+    var h = L.decodeHresult(rawInput);   // still decode hex even if unknown
+    var html = '<div class="card unknown">';
+    html += '<h2>' + esc(rawInput) + '</h2>';
+    html += '<div class="meta"><span class="badge sev-warning">NOT IN LOCAL DATABASE</span></div>';
+    if (h) {
+      html += '<h3>Bit breakdown of ' + esc(h.hex) + '</h3><div class="hres">';
+      html += '<div><small>Severity (bit 31)</small><b>' + h.severityText + '</b></div>';
+      html += '<div><small>Facility (bits 27–16)</small><b>' + h.facility + '</b><br>' + esc(h.facilityText) + '</div>';
+      html += '<div><small>Code (bits 15–0)</small><b>' + h.code + '</b> (' + esc(h.codeHex) + ')</div>';
+      html += '</div>';
+      if (h.win32Mapped) {
+        html += '<p class="meaning">FACILITY_WIN32 — the low 16 bits decode to Win32 error ' + h.code +
+                ': <b>' + esc(h.win32Mapped.title) + '</b>. ' + esc(h.win32Mapped.meaning) + '</p>';
+      } else {
+        html += '<p class="meaning">Not in the local database, but the bit layout above tells you the ' +
+                'severity and which Windows subsystem (facility) raised it — search that facility + code ' +
+                'in Microsoft Learn (learn.microsoft.com) for the official page.</p>';
+      }
+    } else {
+      html += '<p class="meaning">Not in the local database. Support-desk playbook for unknown codes:</p>';
+      html += '<ol class="tight">' +
+        '<li>Search the exact code in quotes plus the product name (e.g. <i>"0x80070005" Outlook</i>).</li>' +
+        '<li>Windows numeric code? Run <b>net helpmsg &lt;code&gt;</b> in Command Prompt.</li>' +
+        '<li>Linux errno? Run <b>errno &lt;code&gt;</b> or check <b>man 3 errno</b>.</li>' +
+        '<li>HTTP status? Check the response body — servers usually name the failing field.</li>' +
+        '<li>Check Event Viewer (Windows) or journalctl (Linux) around the failure timestamp.</li></ol>';
+    }
+    html += '<div class="btnrow"><button class="ghost" id="clearBtn">Clear</button></div></div>';
+    return html;
+  }
+
+  function decode(){
+    var raw = q.value.trim();
+    out.innerHTML = '';
+    if (!raw) { out.innerHTML = '<p class="nores">Type or paste an error code above and press Decode.</p>'; return; }
+    var entry = L.lookup(raw);
+    if (entry) {
+      out.innerHTML = resultCard(entry, raw);
+      var cp = document.getElementById('copyBtn');
+      if (cp) cp.onclick = function(){
+        var txt = L.ticketText(entry, raw);
+        var done = function(){ cp.textContent = 'Copied!'; setTimeout(function(){ cp.textContent = 'Copy ticket summary'; }, 1500); };
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done, done);
+        else { var ta = document.createElement('textarea'); ta.value = txt; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); } catch(e){} document.body.removeChild(ta); done(); }
+      };
+    } else {
+      /* no exact hit — show ranked search results */
+      var hits = L.search(raw, activeCat);
+      if (hits.length === 1 && hits[0].score >= 90) {
+        out.innerHTML = resultCard(hits[0].entry, raw);
+      } else if (hits.length > 0) {
+        var html = '<div class="results"><p class="hint">No exact match — closest candidates:</p>';
+        hits.forEach(function(h){
+          html += '<div class="res" data-key="' + esc(h.entry.key) + '"><div><code>' + esc(h.entry.code) +
+                  '</code> <span class="t">' + esc(h.entry.title) + '</span>' +
+                  '<small>' + esc(catLabel(h.entry.cat)) + '</small></div><span>&rsaquo;</span></div>';
+        });
+        html += '</div>' + unknownCard(raw);
+        out.innerHTML = html;
+        out.querySelectorAll('.res').forEach(function(el){
+          el.onclick = function(){ var e = L.byKey(el.getAttribute('data-key')); if (e) out.innerHTML = resultCard(e, raw); };
+        });
+      } else {
+        out.innerHTML = unknownCard(raw);
+      }
+    }
+    var cl = document.getElementById('clearBtn');
+    if (cl) cl.onclick = function(){ q.value = ''; out.innerHTML = ''; q.focus(); };
+  }
+
+  go.onclick = decode;
+  q.addEventListener('keydown', function(e){ if (e.key === 'Enter') decode(); });
+  renderChips();
+})();
+</script>
+</body>
+</html>
